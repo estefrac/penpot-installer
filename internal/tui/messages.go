@@ -29,5 +29,14 @@ type containerInfo struct {
 	ports  string
 }
 
-// msgWindowSize se envía cuando cambia el tamaño de la terminal
-// (ya viene de tea.WindowSizeMsg, pero lo re-exportamos por claridad)
+// msgDockerNotInstalled se envía cuando Docker no está instalado
+type msgDockerNotInstalled struct{ os string }
+
+// msgDockerNotRunning se envía cuando Docker está instalado pero no corriendo
+type msgDockerNotRunning struct{}
+
+// msgDockerInstallDone se envía cuando la instalación de Docker completó
+type msgDockerInstallDone struct{}
+
+// msgDockerInstallError se envía cuando la instalación de Docker falló
+type msgDockerInstallError struct{ err error }

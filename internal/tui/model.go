@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"runtime"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/spinner"
@@ -18,13 +19,16 @@ import (
 type view int
 
 const (
-	viewSplash    view = iota // Pantalla inicial cargando
-	viewMenu                  // Menú principal
-	viewInstall               // Formulario de instalación
-	viewStatus                // Estado de contenedores
-	viewConfirm               // Confirmación de acción destructiva
-	viewOperation             // Operación en progreso (spinner)
-	viewResult                // Resultado de operación
+	viewSplash           view = iota // Pantalla inicial cargando
+	viewMenu                         // Menú principal
+	viewInstall                      // Formulario de instalación
+	viewStatus                       // Estado de contenedores
+	viewConfirm                      // Confirmación de acción destructiva
+	viewOperation                    // Operación en progreso (spinner)
+	viewResult                       // Resultado de operación
+	viewDockerInstall                // Confirmar instalación de Docker (Linux)
+	viewDockerWindows                // Instrucciones Docker en Windows
+	viewDockerNotRunning             // Docker instalado pero no corriendo
 )
 
 // menuItem representa una opción del menú
@@ -44,6 +48,7 @@ type Model struct {
 	containers     []containerInfo
 	dockerReady    bool
 	dockerChecking bool
+	dockerOS       string // "linux" | "windows" — para la vista de instalación de Docker
 
 	// Menú
 	menuItems  []menuItem
@@ -136,6 +141,33 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.currentView = viewMenu
 		return m, tea.ClearScreen
 
+	case msgDockerNotInstalled:
+		m.dockerChecking = false
+		m.dockerOS = msg.os
+		if msg.os == "linux" {
+			m.currentView = viewDockerInstall
+		} else {
+			m.currentView = viewDockerWindows
+		}
+		return m, tea.ClearScreen
+
+	case msgDockerNotRunning:
+		m.dockerChecking = false
+		m.currentView = viewDockerNotRunning
+		return m, tea.ClearScreen
+
+	case msgDockerInstallDone:
+		// Docker recién instalado — volver a verificar
+		m.operationMsg = ""
+		m.currentView = viewSplash
+		return m, tea.Batch(m.spinner.Tick, checkDockerCmd())
+
+	case msgDockerInstallError:
+		m.resultMsg = fmt.Sprintf("Error instalando Docker: %s\n\nIntentá instalarlo manualmente:\n  curl -fsSL https://get.docker.com | sh", msg.err.Error())
+		m.resultIsError = true
+		m.currentView = viewResult
+		return m, tea.ClearScreen
+
 	case msgDockerError:
 		m.dockerReady = false
 		m.dockerChecking = false
@@ -206,6 +238,12 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleResultKey(msg)
 	case viewStatus:
 		return m.handleStatusKey(msg)
+	case viewDockerInstall:
+		return m.handleDockerInstallKey(msg)
+	case viewDockerWindows:
+		return m.handleDockerWindowsKey(msg)
+	case viewDockerNotRunning:
+		return m.handleDockerNotRunningKey(msg)
 	}
 
 	return m, nil
@@ -296,6 +334,42 @@ func (m Model) handleConfirmKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.currentView = viewMenu
 	case tea.KeyLeft.String(), tea.KeyRight.String(), tea.KeyTab.String():
 		m.confirmYes = !m.confirmYes
+	}
+	return m, nil
+}
+
+func (m Model) handleDockerInstallKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "s", "S", "y", "Y":
+		m.operationMsg = "Instalando Docker..."
+		m.currentView = viewOperation
+		return m, tea.Batch(m.spinner.Tick, installDockerCmd())
+	case "n", "N", tea.KeyEsc.String():
+		return m, tea.Quit
+	}
+	return m, nil
+}
+
+func (m Model) handleDockerWindowsKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.Type {
+	case tea.KeyEnter:
+		// Abrir browser y salir — el usuario tiene que reinstalar Docker Desktop y volver
+		_ = system.OpenBrowser("https://desktop.docker.com/win/main/amd64/Docker%20Desktop%20Installer.exe")
+		return m, tea.Quit
+	case tea.KeyEsc:
+		return m, tea.Quit
+	}
+	return m, nil
+}
+
+func (m Model) handleDockerNotRunningKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "s", "S", "y", "Y":
+		m.operationMsg = "Iniciando Docker..."
+		m.currentView = viewOperation
+		return m, tea.Batch(m.spinner.Tick, startDockerCmd())
+	case "n", "N", tea.KeyEsc.String():
+		return m, tea.Quit
 	}
 	return m, nil
 }
@@ -470,6 +544,12 @@ func (m Model) View() string {
 		return m.renderOperation()
 	case viewResult:
 		return m.renderResult()
+	case viewDockerInstall:
+		return m.renderDockerInstall()
+	case viewDockerWindows:
+		return m.renderDockerWindows()
+	case viewDockerNotRunning:
+		return m.renderDockerNotRunning()
 	}
 
 	return ""
@@ -860,19 +940,114 @@ func (m Model) renderResult() string {
 	)
 }
 
+// renderDockerInstall — Linux: preguntar si instalar Docker
+func (m Model) renderDockerInstall() string {
+	boxW := 60
+	inner := lipgloss.JoinVertical(lipgloss.Left,
+		warningStyle.Bold(true).Render("⚠  Docker no está instalado"),
+		"",
+		lipgloss.NewStyle().Foreground(colorText).Width(boxW-4).Render(
+			"Docker es necesario para correr Penpot.\n\n"+
+				"Se instalará usando el script oficial de Docker:\n"+
+				"  curl -fsSL https://get.docker.com | sh\n\n"+
+				"Necesitás conexión a internet y permisos de administrador (sudo).",
+		),
+		"",
+		lipgloss.NewStyle().Foreground(colorMuted).Render(strings.Repeat("─", boxW-6)),
+		"",
+		highlightStyle.Render("¿Instalar Docker ahora?"),
+		"",
+		lipgloss.NewStyle().Foreground(colorMuted).Render("s / y  instalar   ·   n / esc  salir"),
+	)
+	box := lipgloss.NewStyle().
+		Width(boxW).Padding(1, 2).
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(colorWarning).
+		Render(inner)
+	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, box)
+}
+
+// renderDockerWindows — Windows: instrucciones de instalación manual
+func (m Model) renderDockerWindows() string {
+	boxW := 64
+	inner := lipgloss.JoinVertical(lipgloss.Left,
+		warningStyle.Bold(true).Render("⚠  Docker no está instalado"),
+		"",
+		lipgloss.NewStyle().Foreground(colorText).Width(boxW-4).Render(
+			"En Windows, Docker Desktop se instala de forma gráfica.\n\n"+
+				"Al presionar Enter voy a abrir el navegador con el instalador oficial.\n\n"+
+				"Una vez instalado y con Docker Desktop corriendo,\nvolvé a ejecutar el instalador.",
+		),
+		"",
+		lipgloss.NewStyle().Foreground(colorMuted).Render(strings.Repeat("─", boxW-6)),
+		"",
+		lipgloss.NewStyle().Foreground(colorMuted).Render("enter  abrir instalador y salir   ·   esc  salir"),
+	)
+	box := lipgloss.NewStyle().
+		Width(boxW).Padding(1, 2).
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(colorWarning).
+		Render(inner)
+	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, box)
+}
+
+// renderDockerNotRunning — Docker instalado pero el daemon no corre
+func (m Model) renderDockerNotRunning() string {
+	boxW := 60
+	inner := lipgloss.JoinVertical(lipgloss.Left,
+		warningStyle.Bold(true).Render("⚠  Docker no está corriendo"),
+		"",
+		lipgloss.NewStyle().Foreground(colorText).Width(boxW-4).Render(
+			"Docker está instalado pero el daemon no está activo.\n\n"+
+				"¿Querés que lo inicie ahora?\n"+
+				"  (equivale a: sudo systemctl start docker)",
+		),
+		"",
+		lipgloss.NewStyle().Foreground(colorMuted).Render(strings.Repeat("─", boxW-6)),
+		"",
+		lipgloss.NewStyle().Foreground(colorMuted).Render("s / y  iniciar Docker   ·   n / esc  salir"),
+	)
+	box := lipgloss.NewStyle().
+		Width(boxW).Padding(1, 2).
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(colorWarning).
+		Render(inner)
+	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, box)
+}
+
 // checkDockerCmd verifica si Docker está disponible
 func checkDockerCmd() tea.Cmd {
 	return func() tea.Msg {
 		if !docker.IsInstalled() {
-			return msgDockerError{fmt.Errorf("Docker no está instalado. Instalalo y volvé a ejecutar")}
+			return msgDockerNotInstalled{os: runtime.GOOS}
 		}
 		if !docker.IsRunning() {
-			return msgDockerError{fmt.Errorf("Docker no está corriendo. Inicialo con: sudo systemctl start docker")}
+			return msgDockerNotRunning{}
 		}
 		if !docker.ComposeInstalled() {
-			return msgDockerError{fmt.Errorf("docker compose no está disponible. Actualizá Docker")}
+			return msgDockerError{fmt.Errorf("docker compose no está disponible. Actualizá Docker a una versión reciente")}
 		}
 		return msgDockerReady{}
+	}
+}
+
+// installDockerCmd instala Docker en Linux usando el script oficial
+func installDockerCmd() tea.Cmd {
+	return func() tea.Msg {
+		if err := docker.Install(); err != nil {
+			return msgDockerInstallError{err}
+		}
+		return msgDockerInstallDone{}
+	}
+}
+
+// startDockerCmd inicia el daemon de Docker
+func startDockerCmd() tea.Cmd {
+	return func() tea.Msg {
+		if _, err := system.RunCommand("sudo", "systemctl", "start", "docker"); err != nil {
+			return msgDockerInstallError{fmt.Errorf("no se pudo iniciar Docker: %w\n\nIntentá manualmente: sudo systemctl start docker", err)}
+		}
+		return msgDockerInstallDone{}
 	}
 }
 

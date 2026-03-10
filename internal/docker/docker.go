@@ -1,0 +1,101 @@
+package docker
+
+import (
+	"fmt"
+	"os/exec"
+	"runtime"
+	"strings"
+
+	"github.com/estefrac/penpot-installer/internal/system"
+)
+
+// IsInstalled verifica si Docker está instalado
+func IsInstalled() bool {
+	return system.CommandExists("docker")
+}
+
+// IsRunning verifica si el daemon de Docker está corriendo
+func IsRunning() bool {
+	_, err := system.RunCommand("docker", "info")
+	return err == nil
+}
+
+// Version retorna la versión de Docker instalada
+func Version() string {
+	out, err := system.RunCommand("docker", "version", "--format", "{{.Server.Version}}")
+	if err != nil {
+		return "desconocida"
+	}
+	return strings.TrimSpace(out)
+}
+
+// Install instala Docker según el OS detectado
+func Install() error {
+	switch runtime.GOOS {
+	case "linux":
+		return installLinux()
+	case "windows":
+		return installWindows()
+	default:
+		return fmt.Errorf("instalación automática de Docker no soportada en este OS")
+	}
+}
+
+func installLinux() error {
+	// Usamos el script oficial de Docker
+	steps := []struct {
+		name string
+		cmd  string
+		args []string
+	}{
+		{"Descargando script de instalación", "sh", []string{"-c", "curl -fsSL https://get.docker.com -o /tmp/get-docker.sh"}},
+		{"Instalando Docker", "sh", []string{"/tmp/get-docker.sh"}},
+		{"Iniciando servicio Docker", "systemctl", []string{"start", "docker"}},
+		{"Habilitando Docker al inicio", "systemctl", []string{"enable", "docker"}},
+	}
+
+	for _, step := range steps {
+		fmt.Printf("  → %s...\n", step.name)
+		if err := system.RunCommandInteractive(step.cmd, step.args...); err != nil {
+			return fmt.Errorf("error en '%s': %w", step.name, err)
+		}
+	}
+
+	// Agregar usuario al grupo docker para no necesitar sudo
+	currentUser := getCurrentUser()
+	if currentUser != "root" && currentUser != "" {
+		_ = system.RunCommandInteractive("usermod", "-aG", "docker", currentUser)
+	}
+
+	return nil
+}
+
+func installWindows() error {
+	// En Windows redirigimos al instalador oficial
+	url := "https://desktop.docker.com/win/main/amd64/Docker%20Desktop%20Installer.exe"
+	fmt.Println()
+	fmt.Println("  En Windows, Docker Desktop se instala manualmente.")
+	fmt.Printf("  Descargando desde: %s\n", url)
+	fmt.Println()
+
+	if err := system.OpenBrowser(url); err != nil {
+		fmt.Printf("  Abrí este link manualmente: %s\n", url)
+	}
+
+	fmt.Println("  Una vez instalado Docker Desktop, volvé a ejecutar este instalador.")
+	return fmt.Errorf("reiniciá el instalador luego de instalar Docker Desktop")
+}
+
+func getCurrentUser() string {
+	out, err := exec.Command("whoami").Output()
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(out))
+}
+
+// ComposeInstalled verifica si docker compose está disponible
+func ComposeInstalled() bool {
+	_, err := system.RunCommand("docker", "compose", "version")
+	return err == nil
+}

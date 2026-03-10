@@ -16,25 +16,15 @@ const penpotASCII = `
  ╚═╝     ╚══════╝╚═╝  ╚═══╝╚═╝      ╚═════╝    ╚═╝   
 `
 
-// RenderBanner retorna el banner completo con gradiente
+// RenderBanner retorna el banner completo en verde Penpot
 func RenderBanner(width int) string {
 	lines := strings.Split(strings.TrimPrefix(penpotASCII, "\n"), "\n")
 
-	// Gradiente: de purple a teal
-	colors := []lipgloss.Color{
-		colorPrimary,
-		lipgloss.Color("#8B4CC8"),
-		lipgloss.Color("#A561D7"),
-		lipgloss.Color("#4AA8E8"),
-		lipgloss.Color("#31EFB8"),
-		colorSecondary,
-	}
+	logoStyle := lipgloss.NewStyle().Foreground(colorSuccess).Bold(true)
 
 	var rendered []string
-	for i, line := range lines {
-		idx := i % len(colors)
-		style := lipgloss.NewStyle().Foreground(colors[idx]).Bold(true)
-		rendered = append(rendered, style.Render(line))
+	for _, line := range lines {
+		rendered = append(rendered, logoStyle.Render(line))
 	}
 
 	banner := strings.Join(rendered, "\n")

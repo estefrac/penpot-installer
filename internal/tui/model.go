@@ -630,49 +630,75 @@ func (m Model) activeMenuItems() []menuItem {
 	return active
 }
 
+// globalPadding es el margen interno de toda la TUI respecto a los bordes del terminal
+const globalPadding = 2
+
+// innerWidth retorna el ancho disponible descontando el padding global
+func (m Model) innerWidth() int {
+	w := m.width - globalPadding*2
+	if w < 20 {
+		return 20
+	}
+	return w
+}
+
+// innerHeight retorna la altura disponible descontando el padding global
+func (m Model) innerHeight() int {
+	h := m.height - globalPadding*2
+	if h < 10 {
+		return 10
+	}
+	return h
+}
+
 // View renderiza el TUI completo
 func (m Model) View() string {
 	if m.width == 0 {
 		return "Cargando..."
 	}
 
+	var content string
+
 	switch m.currentView {
 	case viewSplash:
-		return m.renderSplash()
+		content = m.renderSplash()
 	case viewMenu:
-		return m.renderMain()
+		content = m.renderMain()
 	case viewInstall:
-		return m.renderInstall()
+		content = m.renderInstall()
 	case viewStatus:
-		return m.renderStatus()
+		content = m.renderStatus()
 	case viewConfirm:
-		return m.renderConfirm()
+		content = m.renderConfirm()
 	case viewOperation:
-		return m.renderOperation()
+		content = m.renderOperation()
 	case viewResult:
-		return m.renderResult()
+		content = m.renderResult()
 	case viewDockerInstall:
-		return m.renderDockerInstall()
+		content = m.renderDockerInstall()
 	case viewDockerWindows:
-		return m.renderDockerWindows()
+		content = m.renderDockerWindows()
 	case viewDockerNotRunning:
-		return m.renderDockerNotRunning()
+		content = m.renderDockerNotRunning()
 	case viewUninstallData:
-		return m.renderUninstallData()
+		content = m.renderUninstallData()
 	}
 
-	return ""
+	return lipgloss.NewStyle().
+		Padding(globalPadding, globalPadding).
+		Render(content)
 }
 
 // renderSplash muestra la pantalla de carga inicial
 func (m Model) renderSplash() string {
-	banner := RenderBanner(m.width)
+	w, h := m.innerWidth(), m.innerHeight()
+	banner := RenderBanner(w)
 	msg := lipgloss.NewStyle().
 		Foreground(colorMuted).
 		Render(fmt.Sprintf("%s Verificando Docker...", m.spinner.View()))
 
 	return lipgloss.Place(
-		m.width, m.height,
+		w, h,
 		lipgloss.Center, lipgloss.Center,
 		lipgloss.JoinVertical(lipgloss.Center, banner, "", msg),
 	)
@@ -680,7 +706,8 @@ func (m Model) renderSplash() string {
 
 // renderMain muestra el layout principal: banner + menú + panel info
 func (m Model) renderMain() string {
-	banner := RenderBanner(m.width)
+	w := m.innerWidth()
+	banner := RenderBanner(w)
 
 	// Panel izquierdo: menú
 	menuPanel := m.renderMenuPanel()
@@ -689,7 +716,7 @@ func (m Model) renderMain() string {
 	infoPanel := m.renderInfoPanel()
 
 	// Layout horizontal de paneles
-	panelWidth := m.width - 8
+	panelWidth := w - 8
 	menuW := 36
 	infoW := panelWidth - menuW - 4
 	if infoW < 20 {
@@ -712,14 +739,14 @@ func (m Model) renderMain() string {
 			Bold(true).
 			Padding(0, 2).
 			Render(fmt.Sprintf("  Nueva versión disponible: %s  →  descargá el binario actualizado", m.updateAvailable))
-		updateBanner = lipgloss.NewStyle().Width(m.width).Align(lipgloss.Center).Render(updateBanner)
+		updateBanner = lipgloss.NewStyle().Width(w).Align(lipgloss.Center).Render(updateBanner)
 	}
 
 	// Versión actual (pie de página)
 	versionLine := ""
 	if m.version != "" && m.version != "dev" {
 		versionLine = lipgloss.NewStyle().Foreground(colorMuted).Render(m.version)
-		versionLine = lipgloss.NewStyle().Width(m.width).Align(lipgloss.Right).Render(versionLine)
+		versionLine = lipgloss.NewStyle().Width(w).Align(lipgloss.Right).Render(versionLine)
 	}
 
 	content := []string{banner, "", panels, ""}
@@ -727,7 +754,7 @@ func (m Model) renderMain() string {
 		content = append(content, updateBanner, "")
 	}
 	content = append(content,
-		lipgloss.NewStyle().Width(m.width).Align(lipgloss.Center).Render(help),
+		lipgloss.NewStyle().Width(w).Align(lipgloss.Center).Render(help),
 		versionLine,
 	)
 
@@ -805,7 +832,8 @@ func (m Model) renderInfoPanel() string {
 
 // renderInstall renderiza el formulario de instalación
 func (m Model) renderInstall() string {
-	banner := RenderBanner(m.width)
+	w := m.innerWidth()
+	banner := RenderBanner(w)
 	title := sectionTitle.Render("INSTALACIÓN DE PENPOT")
 
 	labels := []string{"Directorio de instalación:", "Puerto de acceso:"}
@@ -836,15 +864,16 @@ func (m Model) renderInstall() string {
 		lipgloss.Left,
 		banner,
 		"",
-		lipgloss.NewStyle().Width(m.width).Align(lipgloss.Center).Render(formPanel),
+		lipgloss.NewStyle().Width(m.innerWidth()).Align(lipgloss.Center).Render(formPanel),
 		"",
-		lipgloss.NewStyle().Width(m.width).Align(lipgloss.Center).Render(help),
+		lipgloss.NewStyle().Width(m.innerWidth()).Align(lipgloss.Center).Render(help),
 	)
 }
 
 // renderStatus renderiza la vista de estado de contenedores
 func (m Model) renderStatus() string {
-	banner := RenderBanner(m.width)
+	w := m.innerWidth()
+	banner := RenderBanner(w)
 	title := sectionTitle.Render("ESTADO DE CONTENEDORES")
 
 	var rows []string
@@ -885,24 +914,25 @@ func (m Model) renderStatus() string {
 		}
 	}
 
-	content := contentPanelStyle.Width(m.width - 8).Render(strings.Join(rows, "\n"))
+	content := contentPanelStyle.Width(m.innerWidth() - 8).Render(strings.Join(rows, "\n"))
 	help := helpStyle.Render("enter / esc  volver al menú")
 
 	return lipgloss.JoinVertical(
 		lipgloss.Left,
 		banner,
 		"",
-		lipgloss.NewStyle().Width(m.width).Align(lipgloss.Center).Render(content),
+		lipgloss.NewStyle().Width(m.innerWidth()).Align(lipgloss.Center).Render(content),
 		"",
-		lipgloss.NewStyle().Width(m.width).Align(lipgloss.Center).Render(help),
+		lipgloss.NewStyle().Width(m.innerWidth()).Align(lipgloss.Center).Render(help),
 	)
 }
 
 // renderConfirm renderiza la pantalla de confirmación (pantalla completa)
 func (m Model) renderConfirm() string {
+	w, h := m.innerWidth(), m.innerHeight()
 	boxW := 56
-	if m.width < 62 {
-		boxW = m.width - 6
+	if w < 62 {
+		boxW = w - 6
 	}
 
 	msg := lipgloss.NewStyle().
@@ -970,7 +1000,7 @@ func (m Model) renderConfirm() string {
 		Render(inner)
 
 	return lipgloss.Place(
-		m.width, m.height,
+		w, h,
 		lipgloss.Center, lipgloss.Center,
 		box,
 	)
@@ -978,9 +1008,10 @@ func (m Model) renderConfirm() string {
 
 // renderOperation muestra el spinner + progreso legible (pantalla completa)
 func (m Model) renderOperation() string {
+	w, h := m.innerWidth(), m.innerHeight()
 	boxW := 72
-	if m.width < 78 {
-		boxW = m.width - 6
+	if w < 78 {
+		boxW = w - 6
 	}
 	logW := boxW - 6
 
@@ -1021,7 +1052,7 @@ func (m Model) renderOperation() string {
 	}
 
 	// Últimas N líneas de log
-	maxLogs := m.height/2 - 8
+	maxLogs := h/2 - 8
 	if maxLogs < 3 {
 		maxLogs = 3
 	}
@@ -1086,7 +1117,7 @@ func (m Model) renderOperation() string {
 		Render(inner)
 
 	return lipgloss.Place(
-		m.width, m.height,
+		w, h,
 		lipgloss.Center, lipgloss.Center,
 		box,
 	)
@@ -1094,9 +1125,10 @@ func (m Model) renderOperation() string {
 
 // renderResult muestra el resultado de una operación (pantalla completa)
 func (m Model) renderResult() string {
+	w, h := m.innerWidth(), m.innerHeight()
 	boxW := 64
-	if m.width < 70 {
-		boxW = m.width - 6
+	if w < 70 {
+		boxW = w - 6
 	}
 
 	var borderColor lipgloss.Color
@@ -1140,7 +1172,7 @@ func (m Model) renderResult() string {
 		Render(inner)
 
 	return lipgloss.Place(
-		m.width, m.height,
+		w, h,
 		lipgloss.Center, lipgloss.Center,
 		box,
 	)
@@ -1170,7 +1202,7 @@ func (m Model) renderDockerInstall() string {
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(colorWarning).
 		Render(inner)
-	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, box)
+	return lipgloss.Place(m.innerWidth(), m.innerHeight(), lipgloss.Center, lipgloss.Center, box)
 }
 
 // renderDockerWindows — Windows: instrucciones de instalación manual
@@ -1194,7 +1226,7 @@ func (m Model) renderDockerWindows() string {
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(colorWarning).
 		Render(inner)
-	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, box)
+	return lipgloss.Place(m.innerWidth(), m.innerHeight(), lipgloss.Center, lipgloss.Center, box)
 }
 
 // renderDockerNotRunning — Docker instalado pero el daemon no corre
@@ -1218,14 +1250,15 @@ func (m Model) renderDockerNotRunning() string {
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(colorWarning).
 		Render(inner)
-	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, box)
+	return lipgloss.Place(m.innerWidth(), m.innerHeight(), lipgloss.Center, lipgloss.Center, box)
 }
 
 // renderUninstallData — segunda confirmación: ¿borrar datos o conservarlos?
 func (m Model) renderUninstallData() string {
+	w, h := m.innerWidth(), m.innerHeight()
 	boxW := 62
-	if m.width < 68 {
-		boxW = m.width - 6
+	if w < 68 {
+		boxW = w - 6
 	}
 
 	inner := lipgloss.JoinVertical(lipgloss.Left,
@@ -1257,7 +1290,7 @@ func (m Model) renderUninstallData() string {
 		BorderForeground(colorError).
 		Render(inner)
 
-	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, box)
+	return lipgloss.Place(w, h, lipgloss.Center, lipgloss.Center, box)
 }
 
 // checkUpdateCmd consulta GitHub en background para ver si hay una versión nueva

@@ -14,9 +14,10 @@ Sin configuraciones manuales, sin tocar YAML, sin dolor. Descargás el binario, 
 
 ## Características del instalador
 
+- ✅ **TUI profesional** — interfaz de terminal con paneles, colores y navegación por teclado
 - ✅ **Detección automática de OS** — Linux y Windows
-- ✅ **Instalación de Docker** — si no lo tenés, te pregunta si instalarlo
-- ✅ **Menú interactivo** — navegación con flechas, sin escribir comandos
+- ✅ **Instalación de Docker** — si no lo tenés, te lo indica con instrucciones claras
+- ✅ **Menú interactivo** — navegación con ↑↓, sin escribir comandos
 - ✅ **Configuración guiada** — directorio de instalación y puerto personalizables
 - ✅ **Gestión completa** — instalar, iniciar, detener, actualizar y desinstalar
 - ✅ **Sin dependencias** — un solo binario, nada más
@@ -73,41 +74,34 @@ chmod +x penpot-manager
 
 ## Uso
 
-Al ejecutar el instalador verás el menú principal. Las opciones disponibles cambian automáticamente según el estado actual de Penpot.
+Al ejecutar el instalador verás el TUI completo con paneles. Las opciones disponibles cambian automáticamente según el estado actual de Penpot.
+
+### Navegación
+
+| Tecla | Acción |
+|---|---|
+| `↑` / `↓` | Moverse por el menú |
+| `Enter` | Seleccionar opción |
+| `Tab` | Siguiente campo (en formularios) |
+| `s` / `y` | Confirmar acción |
+| `n` | Cancelar acción |
+| `Esc` | Volver al menú |
+| `q` | Salir |
 
 ### Primera vez (instalación)
 
-```
-🎨 Penpot Manager
-
-ℹ Sistema operativo detectado: linux
-✔ Docker 28.5.2 detectado
-
-? ¿Qué querés hacer?
-  ❯ 🚀 Instalar Penpot
-    ❌ Salir
-```
-
-El instalador te preguntará:
+Al no estar instalado, el menú muestra solo **Instalar Penpot**. Al seleccionarlo, un formulario te pedirá:
 - **Directorio de instalación** (por defecto: `~/penpot`)
 - **Puerto** (por defecto: `9001`)
 - **Confirmación** antes de proceder
 
-Luego verás el progreso real de Docker en la terminal — las imágenes se van descargando una por una (~2-3 GB en total). Esto es normal, no es un error. Cuando termine, el instalador te confirma que todo está listo y te ofrece abrir el navegador directamente.
+Luego un spinner animado muestra el progreso mientras Docker descarga las imágenes (~2-3 GB). Cuando termina, aparece un mensaje de confirmación.
 
 > ⏱️ La primera instalación puede tardar entre 5 y 15 minutos dependiendo de tu conexión.
 
 ### Una vez instalado
 
-```
-? ¿Qué querés hacer?
-  ❯ ⏹️  Detener Penpot
-    🌐 Abrir en navegador
-    📊 Ver estado
-    🔄 Actualizar Penpot
-    🗑️  Desinstalar Penpot
-    ❌ Salir
-```
+El panel izquierdo muestra las opciones disponibles según si Penpot está corriendo o detenido. El panel derecho muestra el estado en tiempo real, el directorio y la URL de acceso.
 
 ### Acceder a Penpot
 
@@ -170,9 +164,13 @@ GOOS=windows GOARCH=amd64 go build -o penpot-manager.exe .
 
 ```
 penpot-installer/
-├── main.go                    ← Menú principal y flujo de la app
+├── main.go                    ← Entry point — arranca el TUI
 ├── internal/
-│   ├── ui/        ui.go       ← Banner, colores, spinners
+│   ├── tui/                   ← TUI completo (Bubble Tea)
+│   │   ├── model.go           ← Modelo principal: vistas, navegación, operaciones
+│   │   ├── styles.go          ← Paleta de colores Penpot + estilos Lip Gloss
+│   │   ├── banner.go          ← ASCII art con gradiente
+│   │   └── messages.go        ← Tipos de mensajes para operaciones async
 │   ├── system/    system.go   ← Detección de OS, ejecutar comandos
 │   ├── docker/    docker.go   ← Verificar e instalar Docker
 │   └── penpot/    penpot.go   ← Instalar, actualizar y desinstalar Penpot
@@ -187,8 +185,9 @@ penpot-installer/
 
 | Librería | Uso |
 |---|---|
-| [pterm](https://github.com/pterm/pterm) | UI de terminal: colores, spinners, tablas |
-| [survey](https://github.com/AlecAivazis/survey) | Prompts interactivos |
+| [Bubble Tea](https://github.com/charmbracelet/bubbletea) | Framework TUI (patrón Model/Update/View) |
+| [Lip Gloss](https://github.com/charmbracelet/lipgloss) | Estilos CSS-like para terminal |
+| [Bubbles](https://github.com/charmbracelet/bubbles) | Componentes: textinput, spinner |
 | Go stdlib | Detección de OS, ejecución de comandos, manejo de archivos |
 
 ---

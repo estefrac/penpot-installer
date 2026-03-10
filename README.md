@@ -16,10 +16,11 @@ Sin configuraciones manuales, sin tocar YAML, sin dolor. Descargás el binario, 
 
 - ✅ **TUI profesional** — interfaz de terminal con paneles, colores y navegación por teclado
 - ✅ **Detección automática de OS** — Linux y Windows
-- ✅ **Instalación de Docker** — si no lo tenés, te lo indica con instrucciones claras
+- ✅ **Instalación de Docker** — si no lo tenés, lo instala automáticamente (Linux) o te guía (Windows)
 - ✅ **Menú interactivo** — navegación con ↑↓, sin escribir comandos
 - ✅ **Configuración guiada** — directorio de instalación y puerto personalizables
 - ✅ **Gestión completa** — instalar, iniciar, detener, actualizar y desinstalar
+- ✅ **Streaming en tiempo real** — el output de Docker se muestra línea a línea mientras ocurre
 - ✅ **Sin dependencias** — un solo binario, nada más
 
 ---
@@ -87,7 +88,7 @@ Al no estar instalado, el menú muestra solo **Instalar Penpot**. Al seleccionar
 - **Puerto** (por defecto: `9001`)
 - **Confirmación** antes de proceder
 
-Luego un spinner animado muestra el progreso mientras Docker descarga las imágenes (~2-3 GB). Cuando termina, aparece un mensaje de confirmación.
+Luego verás el output de Docker en tiempo real — cada línea aparece mientras se descarga. Las imágenes pesan ~2-3 GB. Cuando termina, aparece un mensaje de confirmación.
 
 > ⏱️ La primera instalación puede tardar entre 5 y 15 minutos dependiendo de tu conexión.
 

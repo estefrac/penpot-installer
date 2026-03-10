@@ -15,6 +15,17 @@ import (
 	"github.com/estefrac/penpot-installer/internal/system"
 )
 
+// pendingOpKind identifica qué operación está pendiente de confirmación
+type pendingOpKind int
+
+const (
+	opNone pendingOpKind = iota
+	opStop
+	opUpdate
+	opUninstall
+	opInstall
+)
+
 // view representa cada pantalla del TUI
 type view int
 
@@ -66,9 +77,9 @@ type Model struct {
 	resultIsError bool
 
 	// Confirmación
-	confirmMsg    string
-	confirmAction func() tea.Cmd
-	confirmYes    bool
+	confirmMsg string
+	pendingOp  pendingOpKind
+	confirmYes bool
 
 	// Layout
 	width  int
@@ -76,6 +87,9 @@ type Model struct {
 
 	// Logs de operación (para mostrar progreso)
 	logs []string
+
+	// Canal de streaming en tiempo real
+	logCh <-chan string
 }
 
 // New crea un nuevo modelo con valores por defecto
@@ -159,6 +173,25 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case msgLogLine:
 		m.logs = append(m.logs, msg.line)
 		return m, nil
+
+	case msgPollLog:
+		if m.logCh == nil {
+			return m, nil
+		}
+		select {
+		case line, ok := <-m.logCh:
+			if !ok {
+				// Canal cerrado — esperar resultado final
+				m.logCh = nil
+				return m, nil
+			}
+			m.logs = append(m.logs, line)
+			// Pedir la siguiente línea inmediatamente
+			return m, pollLogCmd()
+		default:
+			// No hay línea todavía — volver a intentar en breve
+			return m, pollLogCmd()
+		}
 
 	case msgDockerInstallDone:
 		// Docker recién instalado — volver a verificar
@@ -306,7 +339,7 @@ func (m Model) handleInstallKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		// Último campo: confirmar instalación
-		return m.confirmInstall()
+		return m.startInstallConfirm()
 
 	case tea.KeyEsc:
 		m.currentView = viewMenu
@@ -323,19 +356,16 @@ func (m Model) handleConfirmKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "y", "Y", "s", "S":
 		m.confirmYes = true
-		m.currentView = viewOperation
-		m.operationDone = false
-		return m, tea.Batch(m.spinner.Tick, m.confirmAction())
+		return m.executePendingOp()
 	case "n", "N", tea.KeyEsc.String():
 		m.currentView = viewMenu
 		return m, tea.ClearScreen
 	case tea.KeyEnter.String():
 		if m.confirmYes {
-			m.currentView = viewOperation
-			m.operationDone = false
-			return m, tea.Batch(m.spinner.Tick, m.confirmAction())
+			return m.executePendingOp()
 		}
 		m.currentView = viewMenu
+		return m, tea.ClearScreen
 	case tea.KeyLeft.String(), tea.KeyRight.String(), tea.KeyTab.String():
 		m.confirmYes = !m.confirmYes
 	}
@@ -413,24 +443,19 @@ func (m Model) executeMenuItem(label string) (tea.Model, tea.Cmd) {
 
 	case "▶️  Iniciar Penpot":
 		m.operationMsg = "Iniciando Penpot..."
-		m.currentView = viewOperation
-		m.operationDone = false
-		return m, tea.Batch(m.spinner.Tick, startPenpotCmd(m.cfg))
+		return m.startPenpotCmd()
 
 	case "⏹️  Detener Penpot":
 		m.confirmMsg = "¿Detener Penpot?"
 		m.confirmYes = false
-		m.confirmAction = func() tea.Cmd { return stopPenpotCmd(m.cfg) }
+		m.pendingOp = opStop
 		m.currentView = viewConfirm
 		return m, nil
 
 	case "🔄 Actualizar Penpot":
 		m.confirmMsg = "Penpot se detendrá brevemente para actualizar.\n¿Continuar con la actualización?"
 		m.confirmYes = true
-		m.confirmAction = func() tea.Cmd {
-			m.operationMsg = "Actualizando Penpot..."
-			return updatePenpotCmd(m.cfg)
-		}
+		m.pendingOp = opUpdate
 		m.currentView = viewConfirm
 		return m, nil
 
@@ -447,10 +472,7 @@ func (m Model) executeMenuItem(label string) (tea.Model, tea.Cmd) {
 	case "🗑️  Desinstalar Penpot":
 		m.confirmMsg = "⚠️  Esto eliminará contenedores, volúmenes, imágenes Docker y el directorio de instalación.\n\nLa próxima instalación descargará todo de cero.\n\n¿Estás seguro?"
 		m.confirmYes = false
-		m.confirmAction = func() tea.Cmd {
-			m.operationMsg = "Desinstalando Penpot..."
-			return uninstallPenpotCmd(m.cfg)
-		}
+		m.pendingOp = opUninstall
 		m.currentView = viewConfirm
 		return m, nil
 
@@ -461,8 +483,8 @@ func (m Model) executeMenuItem(label string) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// confirmInstall prepara la confirmación antes de instalar
-func (m Model) confirmInstall() (tea.Model, tea.Cmd) {
+// startInstallConfirm prepara la confirmación antes de instalar
+func (m Model) startInstallConfirm() (tea.Model, tea.Cmd) {
 	m.cfg.InstallDir = m.inputs[0].Value()
 	m.cfg.Port = m.inputs[1].Value()
 
@@ -472,12 +494,29 @@ func (m Model) confirmInstall() (tea.Model, tea.Cmd) {
 		m.cfg.Port,
 	)
 	m.confirmYes = true
-	m.confirmAction = func() tea.Cmd {
-		m.operationMsg = "Instalando Penpot..."
-		return installPenpotCmd(m.cfg)
-	}
+	m.pendingOp = opInstall
 	m.currentView = viewConfirm
 	return m, nil
+}
+
+// executePendingOp lanza la operación pendiente con streaming real
+func (m Model) executePendingOp() (tea.Model, tea.Cmd) {
+	switch m.pendingOp {
+	case opInstall:
+		m.operationMsg = "Instalando Penpot..."
+		return m.installPenpotCmd()
+	case opStop:
+		m.operationMsg = "Deteniendo Penpot..."
+		return m.stopPenpotCmd()
+	case opUpdate:
+		m.operationMsg = "Actualizando Penpot..."
+		return m.updatePenpotCmd()
+	case opUninstall:
+		m.operationMsg = "Desinstalando Penpot..."
+		return m.uninstallPenpotCmd()
+	}
+	m.currentView = viewMenu
+	return m, tea.ClearScreen
 }
 
 // buildMenuItems construye las opciones del menú según el estado actual
@@ -1105,79 +1144,80 @@ func startDockerCmd() tea.Cmd {
 	}
 }
 
+// launchStreaming arranca una operación con streaming real y retorna
+// el modelo actualizado (con logCh asignado) y los Cmds necesarios.
+func (m Model) launchStreaming(op func(emit func(string)) error, doneMsg string) (Model, tea.Cmd) {
+	resultCmd, ch := startStreamingCmd(op, doneMsg)
+	m.logCh = ch
+	m.logs = nil
+	m.operationDone = false
+	m.currentView = viewOperation
+	return m, tea.Batch(m.spinner.Tick, resultCmd, pollLogCmd())
+}
+
 // installPenpotCmd ejecuta la instalación de Penpot con streaming
-func installPenpotCmd(cfg penpot.Config) tea.Cmd {
-	return streamingPenpotCmd(
-		func(emit func(string)) error { return penpot.InstallStreaming(cfg, emit) },
-		fmt.Sprintf("¡Penpot instalado correctamente! 🎨\n\nAccedé en: http://localhost:%s\n\nLa primera vez puede tardar unos segundos en estar listo.", cfg.Port),
+func (m Model) installPenpotCmd() (Model, tea.Cmd) {
+	return m.launchStreaming(
+		func(emit func(string)) error { return penpot.InstallStreaming(m.cfg, emit) },
+		fmt.Sprintf("¡Penpot instalado correctamente! 🎨\n\nAccedé en: http://localhost:%s\n\nLa primera vez puede tardar unos segundos en estar listo.", m.cfg.Port),
 	)
 }
 
 // startPenpotCmd inicia Penpot con streaming
-func startPenpotCmd(cfg penpot.Config) tea.Cmd {
-	return streamingPenpotCmd(
-		func(emit func(string)) error { return penpot.StartStreaming(cfg, emit) },
-		fmt.Sprintf("Penpot iniciado ▶️\n\nAccedé en: http://localhost:%s", cfg.Port),
+func (m Model) startPenpotCmd() (Model, tea.Cmd) {
+	return m.launchStreaming(
+		func(emit func(string)) error { return penpot.StartStreaming(m.cfg, emit) },
+		fmt.Sprintf("Penpot iniciado ▶️\n\nAccedé en: http://localhost:%s", m.cfg.Port),
 	)
 }
 
 // stopPenpotCmd detiene Penpot con streaming
-func stopPenpotCmd(cfg penpot.Config) tea.Cmd {
-	return streamingPenpotCmd(
-		func(emit func(string)) error { return penpot.StopStreaming(cfg, emit) },
+func (m Model) stopPenpotCmd() (Model, tea.Cmd) {
+	return m.launchStreaming(
+		func(emit func(string)) error { return penpot.StopStreaming(m.cfg, emit) },
 		"Penpot detenido ⏹️",
 	)
 }
 
 // updatePenpotCmd actualiza Penpot con streaming
-func updatePenpotCmd(cfg penpot.Config) tea.Cmd {
-	return streamingPenpotCmd(
-		func(emit func(string)) error { return penpot.UpdateStreaming(cfg, emit) },
+func (m Model) updatePenpotCmd() (Model, tea.Cmd) {
+	return m.launchStreaming(
+		func(emit func(string)) error { return penpot.UpdateStreaming(m.cfg, emit) },
 		"¡Penpot actualizado correctamente! 🎉",
 	)
 }
 
 // uninstallPenpotCmd desinstala Penpot con streaming
-func uninstallPenpotCmd(cfg penpot.Config) tea.Cmd {
-	return streamingPenpotCmd(
-		func(emit func(string)) error { return penpot.UninstallStreaming(cfg, emit) },
+func (m Model) uninstallPenpotCmd() (Model, tea.Cmd) {
+	return m.launchStreaming(
+		func(emit func(string)) error { return penpot.UninstallStreaming(m.cfg, emit) },
 		"Penpot desinstalado correctamente.",
 	)
 }
 
-// streamingPenpotCmd ejecuta una operación que emite líneas y las envía
-// al TUI como mensajes individuales de Bubble Tea usando tea.Sequence.
-func streamingPenpotCmd(op func(emit func(string)) error, doneMsg string) tea.Cmd {
-	return func() tea.Msg {
-		lines := make(chan string, 128)
-		errCh := make(chan error, 1)
+// pollLogCmd retorna un Cmd que emite msgPollLog para seguir leyendo el canal
+func pollLogCmd() tea.Cmd {
+	return func() tea.Msg { return msgPollLog{} }
+}
 
-		go func() {
-			errCh <- op(func(line string) {
-				lines <- line
-			})
-			close(lines)
-		}()
+// startStreamingCmd arranca la operación en background y retorna dos Cmds:
+// uno para abrir el canal de logs (asignado al modelo vía msgStreamStarted)
+// y uno para escuchar el resultado final.
+func startStreamingCmd(op func(emit func(string)) error, doneMsg string) (tea.Cmd, <-chan string) {
+	lines := make(chan string, 256)
 
-		// Drenar el canal emitiendo cada línea como msgLogLine
-		// Bubble Tea ejecuta Cmd en goroutines, así que esto bloquea
-		// hasta que termina — pero cada msgLogLine se despacha
-		// usando un canal intermedio con tea.Sequence via poll
-		var cmds []tea.Cmd
-		for line := range lines {
-			l := line // captura
-			cmds = append(cmds, func() tea.Msg { return msgLogLine{l} })
-		}
-
-		err := <-errCh
+	resultCmd := func() tea.Msg {
+		err := op(func(line string) {
+			lines <- line
+		})
+		close(lines)
 		if err != nil {
-			cmds = append(cmds, func() tea.Msg { return msgOperationError{err} })
-		} else {
-			cmds = append(cmds, func() tea.Msg { return msgOperationDone{doneMsg} })
+			return msgOperationError{err}
 		}
-
-		return tea.Sequence(cmds...)()
+		return msgOperationDone{doneMsg}
 	}
+
+	return resultCmd, lines
 }
 
 // loadStatusCmd carga el estado de los contenedores

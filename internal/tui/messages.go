@@ -38,6 +38,9 @@ type msgDockerNotRunning struct{}
 // msgLogLine se envía con cada línea de output de un comando en streaming
 type msgLogLine struct{ line string }
 
+// msgPollLog se envía para pedir la siguiente línea del canal de streaming
+type msgPollLog struct{}
+
 // msgDockerInstallDone se envía cuando la instalación de Docker completó
 type msgDockerInstallDone struct{}
 

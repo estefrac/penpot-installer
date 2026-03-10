@@ -23,6 +23,8 @@ const (
 	opStop
 	opUpdate
 	opUninstall
+	opUninstallKeepData
+	opUninstallWithData
 	opInstall
 )
 
@@ -40,6 +42,7 @@ const (
 	viewDockerInstall                // Confirmar instalación de Docker (Linux)
 	viewDockerWindows                // Instrucciones Docker en Windows
 	viewDockerNotRunning             // Docker instalado pero no corriendo
+	viewUninstallData                // Segunda confirmación: ¿borrar datos?
 )
 
 // menuItem representa una opción del menú
@@ -281,6 +284,8 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleDockerWindowsKey(msg)
 	case viewDockerNotRunning:
 		return m.handleDockerNotRunningKey(msg)
+	case viewUninstallData:
+		return m.handleUninstallDataKey(msg)
 	}
 
 	return m, nil
@@ -408,6 +413,23 @@ func (m Model) handleDockerNotRunningKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+func (m Model) handleUninstallDataKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "s", "S", "y", "Y":
+		// Borrar datos también
+		m.pendingOp = opUninstallWithData
+		return m.executePendingOp()
+	case "n", "N":
+		// Conservar datos
+		m.pendingOp = opUninstallKeepData
+		return m.executePendingOp()
+	case tea.KeyEsc.String():
+		m.currentView = viewMenu
+		return m, tea.ClearScreen
+	}
+	return m, nil
+}
+
 func (m Model) handleResultKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.Type {
 	case tea.KeyEnter, tea.KeyEsc:
@@ -470,7 +492,7 @@ func (m Model) executeMenuItem(label string) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case "🗑️  Desinstalar Penpot":
-		m.confirmMsg = "⚠️  Esto eliminará contenedores, volúmenes, imágenes Docker y el directorio de instalación.\n\nLa próxima instalación descargará todo de cero.\n\n¿Estás seguro?"
+		m.confirmMsg = "¿Desinstalar Penpot?\n\nSe eliminarán los contenedores e imágenes Docker.\nEn el siguiente paso podrás elegir qué hacer con tus datos."
 		m.confirmYes = false
 		m.pendingOp = opUninstall
 		m.currentView = viewConfirm
@@ -512,7 +534,14 @@ func (m Model) executePendingOp() (tea.Model, tea.Cmd) {
 		m.operationMsg = "Actualizando Penpot..."
 		return m.updatePenpotCmd()
 	case opUninstall:
+		// Primera confirmación OK → pasar a la segunda pantalla (datos)
+		m.currentView = viewUninstallData
+		return m, tea.ClearScreen
+	case opUninstallKeepData:
 		m.operationMsg = "Desinstalando Penpot..."
+		return m.uninstallKeepDataCmd()
+	case opUninstallWithData:
+		m.operationMsg = "Desinstalando Penpot (incluyendo datos)..."
 		return m.uninstallPenpotCmd()
 	}
 	m.currentView = viewMenu
@@ -593,6 +622,8 @@ func (m Model) View() string {
 		return m.renderDockerWindows()
 	case viewDockerNotRunning:
 		return m.renderDockerNotRunning()
+	case viewUninstallData:
+		return m.renderUninstallData()
 	}
 
 	return ""
@@ -1108,6 +1139,45 @@ func (m Model) renderDockerNotRunning() string {
 	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, box)
 }
 
+// renderUninstallData — segunda confirmación: ¿borrar datos o conservarlos?
+func (m Model) renderUninstallData() string {
+	boxW := 62
+	if m.width < 68 {
+		boxW = m.width - 6
+	}
+
+	inner := lipgloss.JoinVertical(lipgloss.Left,
+		errorStyle.Bold(true).Render("🗑️  ¿Qué hacemos con tus datos?"),
+		"",
+		lipgloss.NewStyle().Foreground(colorText).Width(boxW-4).Render(
+			"Los contenedores e imágenes Docker serán eliminados en cualquier caso.\n\n"+
+				"Tus proyectos y archivos están guardados en volúmenes de Docker.",
+		),
+		"",
+		lipgloss.NewStyle().Foreground(colorMuted).Render(strings.Repeat("─", boxW-6)),
+		"",
+		lipgloss.NewStyle().Foreground(colorSuccess).Bold(true).Render("n  Conservar datos"),
+		lipgloss.NewStyle().Foreground(colorMuted).Render("   Los volúmenes quedan en Docker."),
+		lipgloss.NewStyle().Foreground(colorMuted).Render("   Reinstalando Penpot los recuperás."),
+		"",
+		lipgloss.NewStyle().Foreground(colorError).Bold(true).Render("s  Borrar todo"),
+		lipgloss.NewStyle().Foreground(colorMuted).Render("   ⚠️  Irreversible. Proyectos y archivos"),
+		lipgloss.NewStyle().Foreground(colorMuted).Render("   eliminados para siempre."),
+		"",
+		lipgloss.NewStyle().Foreground(colorMuted).Render(strings.Repeat("─", boxW-6)),
+		"",
+		lipgloss.NewStyle().Foreground(colorMuted).Render("esc  cancelar y volver al menú"),
+	)
+
+	box := lipgloss.NewStyle().
+		Width(boxW).Padding(1, 2).
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(colorError).
+		Render(inner)
+
+	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, box)
+}
+
 // checkDockerCmd verifica si Docker está disponible
 func checkDockerCmd() tea.Cmd {
 	return func() tea.Msg {
@@ -1187,11 +1257,19 @@ func (m Model) updatePenpotCmd() (Model, tea.Cmd) {
 	)
 }
 
-// uninstallPenpotCmd desinstala Penpot con streaming
+// uninstallPenpotCmd desinstala Penpot borrando también volúmenes e imágenes
 func (m Model) uninstallPenpotCmd() (Model, tea.Cmd) {
 	return m.launchStreaming(
 		func(emit func(string)) error { return penpot.UninstallStreaming(m.cfg, emit) },
-		"Penpot desinstalado correctamente.",
+		"Penpot desinstalado correctamente.\n\nTodos los datos fueron eliminados.",
+	)
+}
+
+// uninstallKeepDataCmd desinstala Penpot conservando los volúmenes con los datos
+func (m Model) uninstallKeepDataCmd() (Model, tea.Cmd) {
+	return m.launchStreaming(
+		func(emit func(string)) error { return penpot.UninstallKeepDataStreaming(m.cfg, emit) },
+		"Penpot desinstalado correctamente.\n\nTus datos (proyectos y archivos) fueron conservados en los volúmenes de Docker.\nPodés reinstalar Penpot y recuperarlos.",
 	)
 }
 

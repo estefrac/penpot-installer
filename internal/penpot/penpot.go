@@ -275,13 +275,32 @@ func UpdateStreaming(cfg Config, emit func(string)) error {
 	return runStreaming(emit, "docker", "compose", "-f", composeFile, "up", "-d")
 }
 
-// UninstallStreaming desinstala Penpot emitiendo líneas de progreso
+// UninstallStreaming desinstala Penpot eliminando contenedores, volúmenes e imágenes
 func UninstallStreaming(cfg Config, emit func(string)) error {
 	composeFile := filepath.Join(cfg.InstallDir, "docker-compose.yaml")
 
 	emit("Eliminando contenedores, volúmenes e imágenes...")
 	if err := runStreaming(emit, "docker", "compose", "-f", composeFile, "down",
 		"--volumes", "--rmi", "all", "--remove-orphans"); err != nil {
+		return fmt.Errorf("error eliminando contenedores: %w", err)
+	}
+
+	emit("Eliminando directorio de instalación...")
+	if err := os.RemoveAll(cfg.InstallDir); err != nil {
+		return fmt.Errorf("error eliminando directorio: %w", err)
+	}
+	emit("Directorio eliminado")
+
+	return nil
+}
+
+// UninstallKeepDataStreaming desinstala Penpot conservando los volúmenes con los datos
+func UninstallKeepDataStreaming(cfg Config, emit func(string)) error {
+	composeFile := filepath.Join(cfg.InstallDir, "docker-compose.yaml")
+
+	emit("Eliminando contenedores e imágenes (conservando datos)...")
+	if err := runStreaming(emit, "docker", "compose", "-f", composeFile, "down",
+		"--rmi", "all", "--remove-orphans"); err != nil {
 		return fmt.Errorf("error eliminando contenedores: %w", err)
 	}
 

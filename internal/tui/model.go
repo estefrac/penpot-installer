@@ -88,11 +88,16 @@ type Model struct {
 	width  int
 	height int
 
-	// Logs de operación (para mostrar progreso)
+	// Logs de operación (mensajes filtrados para el usuario)
 	logs []string
 
 	// Canal de streaming en tiempo real
 	logCh <-chan string
+
+	// Progreso de servicios Docker
+	servicesPulling map[string]bool // servicio → descargando
+	servicesPulled  []string        // servicios completados en orden
+	servicesStarted []string        // contenedores arrancados
 }
 
 // New crea un nuevo modelo con valores por defecto
@@ -188,7 +193,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.logCh = nil
 				return m, nil
 			}
-			m.logs = append(m.logs, line)
+			m.processDockerLine(line)
 			// Pedir la siguiente línea inmediatamente
 			return m, pollLogCmd()
 		default:
@@ -920,13 +925,13 @@ func (m Model) renderConfirm() string {
 	)
 }
 
-// renderOperation muestra el spinner + logs en vivo (pantalla completa)
+// renderOperation muestra el spinner + progreso legible (pantalla completa)
 func (m Model) renderOperation() string {
 	boxW := 72
 	if m.width < 78 {
 		boxW = m.width - 6
 	}
-	logW := boxW - 6 // ancho interior para las líneas de log
+	logW := boxW - 6
 
 	// Header con spinner
 	header := lipgloss.JoinHorizontal(lipgloss.Left,
@@ -935,16 +940,45 @@ func (m Model) renderOperation() string {
 		lipgloss.NewStyle().Foreground(colorText).Bold(true).Render(m.operationMsg),
 	)
 
-	// Área de logs — últimas N líneas que entren en la pantalla
-	maxLogs := m.height/2 - 6
-	if maxLogs < 4 {
-		maxLogs = 4
+	// Barra de progreso de servicios si hay info
+	var progressSection string
+	total := len(m.servicesPulled) + len(m.servicesPulling) + len(m.servicesStarted)
+	if total > 0 {
+		pulled := len(m.servicesPulled)
+		started := len(m.servicesStarted)
+
+		// Barra visual: bloques llenos vs vacíos
+		barWidth := logW - 10
+		if barWidth < 10 {
+			barWidth = 10
+		}
+		filled := 0
+		if total > 0 {
+			filled = (pulled + started) * barWidth / (total + 1)
+		}
+		bar := strings.Repeat("█", filled) + strings.Repeat("░", barWidth-filled)
+		barStyled := lipgloss.NewStyle().Foreground(colorSecondary).Render(bar)
+
+		counter := lipgloss.NewStyle().Foreground(colorMuted).
+			Render(fmt.Sprintf("%d/%d servicios", pulled+started, total))
+
+		progressSection = lipgloss.JoinVertical(lipgloss.Left,
+			barStyled,
+			counter,
+			"",
+		)
+	}
+
+	// Últimas N líneas de log
+	maxLogs := m.height/2 - 8
+	if maxLogs < 3 {
+		maxLogs = 3
 	}
 
 	var logLines []string
 	if len(m.logs) == 0 {
 		logLines = append(logLines,
-			lipgloss.NewStyle().Foreground(colorMuted).Italic(true).Render("Esperando output..."),
+			lipgloss.NewStyle().Foreground(colorMuted).Italic(true).Render("Conectando con Docker..."),
 		)
 	} else {
 		recent := m.logs
@@ -952,22 +986,18 @@ func (m Model) renderOperation() string {
 			recent = recent[len(recent)-maxLogs:]
 		}
 		for _, l := range recent {
-			// Truncar líneas muy largas
 			if len(l) > logW {
 				l = l[:logW-3] + "..."
 			}
-			// Colorear según contenido
-			var styled string
 			ll := strings.ToLower(l)
+			var styled string
 			switch {
+			case strings.HasPrefix(l, "✓") || strings.HasPrefix(l, "▶"):
+				styled = successStyle.Render(l)
+			case strings.HasPrefix(l, "⬇"):
+				styled = lipgloss.NewStyle().Foreground(colorSecondary).Render(l)
 			case strings.Contains(ll, "error") || strings.Contains(ll, "failed"):
 				styled = errorStyle.Render(l)
-			case strings.Contains(ll, "pull") || strings.Contains(ll, "download") ||
-				strings.Contains(ll, "extract") || strings.Contains(ll, "descarg"):
-				styled = lipgloss.NewStyle().Foreground(colorSecondary).Render(l)
-			case strings.Contains(ll, "done") || strings.Contains(ll, "complete") ||
-				strings.Contains(ll, "started") || strings.Contains(ll, "listo"):
-				styled = successStyle.Render(l)
 			default:
 				styled = lipgloss.NewStyle().Foreground(colorMuted).Render(l)
 			}
@@ -984,13 +1014,14 @@ func (m Model) renderOperation() string {
 
 	note := lipgloss.NewStyle().
 		Foreground(colorMuted).Italic(true).
-		Render("Esto puede tardar varios minutos...")
+		Render("Esto puede tardar varios minutos en la primera instalación...")
 
 	inner := lipgloss.JoinVertical(lipgloss.Left,
 		sectionTitle.Render("EN PROGRESO"),
 		"",
 		header,
 		"",
+		progressSection,
 		logArea,
 		"",
 		note,
@@ -1214,12 +1245,77 @@ func startDockerCmd() tea.Cmd {
 	}
 }
 
+// processDockerLine parsea una línea de output de Docker y la convierte
+// en un mensaje legible para el usuario, ignorando el ruido.
+func (m *Model) processDockerLine(line string) {
+	l := strings.TrimSpace(line)
+	ll := strings.ToLower(l)
+
+	// Inicializar mapa si hace falta
+	if m.servicesPulling == nil {
+		m.servicesPulling = make(map[string]bool)
+	}
+
+	// Líneas de ruido — ignorar completamente
+	noisePatterns := []string{
+		"pulling fs layer", "verifying checksum", "waiting",
+		"already exists", "digest:", "sha256:", "status: image",
+		"using default tag",
+	}
+	for _, noise := range noisePatterns {
+		if strings.Contains(ll, noise) {
+			return
+		}
+	}
+
+	// Servicio empezando a descargar: "penpot-backend Pulling"
+	if strings.HasSuffix(ll, " pulling") {
+		svc := strings.TrimSuffix(l, " Pulling")
+		svc = strings.TrimSuffix(svc, " pulling")
+		m.servicesPulling[svc] = true
+		m.logs = append(m.logs, fmt.Sprintf("⬇  Descargando %s...", svc))
+		return
+	}
+
+	// Servicio descargado: "penpot-backend Pulled"
+	if strings.HasSuffix(ll, " pulled") {
+		svc := strings.TrimSuffix(l, " Pulled")
+		svc = strings.TrimSuffix(svc, " pulled")
+		delete(m.servicesPulling, svc)
+		m.servicesPulled = append(m.servicesPulled, svc)
+		m.logs = append(m.logs, fmt.Sprintf("✓  %s descargado", svc))
+		return
+	}
+
+	// Contenedor arrancado: "penpot-backend Started"
+	if strings.HasSuffix(ll, " started") {
+		svc := strings.TrimSuffix(l, " Started")
+		svc = strings.TrimSuffix(svc, " started")
+		m.servicesStarted = append(m.servicesStarted, svc)
+		m.logs = append(m.logs, fmt.Sprintf("▶  %s iniciado", svc))
+		return
+	}
+
+	// "Download complete" por capa — ignorar, ya lo cubrimos con Pulled
+	if strings.Contains(ll, "download complete") || strings.Contains(ll, "pull complete") {
+		return
+	}
+
+	// Cualquier otra línea con contenido útil — mostrar tal cual
+	if l != "" {
+		m.logs = append(m.logs, l)
+	}
+}
+
 // launchStreaming arranca una operación con streaming real y retorna
 // el modelo actualizado (con logCh asignado) y los Cmds necesarios.
 func (m Model) launchStreaming(op func(emit func(string)) error, doneMsg string) (Model, tea.Cmd) {
 	resultCmd, ch := startStreamingCmd(op, doneMsg)
 	m.logCh = ch
 	m.logs = nil
+	m.servicesPulling = make(map[string]bool)
+	m.servicesPulled = nil
+	m.servicesStarted = nil
 	m.operationDone = false
 	m.currentView = viewOperation
 	return m, tea.Batch(m.spinner.Tick, resultCmd, pollLogCmd())

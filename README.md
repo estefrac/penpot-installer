@@ -43,21 +43,13 @@ Sin configuraciones manuales, sin tocar YAML, sin dolor. Descargás el binario, 
 ### Linux
 
 ```bash
-# Descargar el binario
-curl -fsSL https://github.com/estefrac/penpot-installer/releases/latest/download/penpot-manager-linux-amd64 -o penpot-manager
-
-# Darle permisos de ejecución
-chmod +x penpot-manager
-
-# Ejecutar
-./penpot-manager
+# Descargar el binario, darle permisos y ejecutar
+curl -fsSL https://github.com/estefrac/penpot-installer/releases/latest/download/penpot-manager-linux-amd64 -o /tmp/penpot-manager && chmod +x /tmp/penpot-manager && /tmp/penpot-manager
 ```
 
 > En ARM64 (Raspberry Pi, Apple Silicon con Linux, etc.):
 > ```bash
-> curl -fsSL https://github.com/estefrac/penpot-installer/releases/latest/download/penpot-manager-linux-arm64 -o penpot-manager
-> chmod +x penpot-manager
-> ./penpot-manager
+> curl -fsSL https://github.com/estefrac/penpot-installer/releases/latest/download/penpot-manager-linux-arm64 -o /tmp/penpot-manager && chmod +x /tmp/penpot-manager && /tmp/penpot-manager
 > ```
 
 ### Windows

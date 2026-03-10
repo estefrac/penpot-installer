@@ -54,12 +54,14 @@ func RunCommand(name string, args ...string) (string, error) {
 	return string(out), err
 }
 
-// RunCommandInteractive ejecuta un comando mostrando el output en tiempo real
+// RunCommandInteractive ejecuta un comando descartando el output.
+// Cuando el TUI está activo (AltScreen), escribir directo a os.Stdout
+// rompe el renderizado — los comandos largos corren en background silencioso.
 func RunCommandInteractive(name string, args ...string) error {
 	cmd := exec.Command(name, args...)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	cmd.Stdin = os.Stdin
+	cmd.Stdout = nil
+	cmd.Stderr = nil
+	cmd.Stdin = nil
 	return cmd.Run()
 }
 

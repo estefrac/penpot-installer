@@ -731,77 +731,97 @@ func (m Model) renderConfirm() string {
 	)
 }
 
-// renderOperation muestra el spinner durante una operación
+// renderOperation muestra el spinner durante una operación (pantalla completa)
 func (m Model) renderOperation() string {
-	banner := RenderBanner(m.width)
-
-	spinnerView := lipgloss.JoinHorizontal(lipgloss.Center,
+	spinnerView := lipgloss.JoinHorizontal(lipgloss.Left,
 		m.spinner.View(),
 		" ",
-		lipgloss.NewStyle().Foreground(colorText).Render(m.operationMsg),
+		lipgloss.NewStyle().Foreground(colorText).Bold(true).Render(m.operationMsg),
 	)
 
-	var logsView string
-	if len(m.logs) > 0 {
-		recent := m.logs
-		if len(recent) > 8 {
-			recent = recent[len(recent)-8:]
-		}
-		var logLines []string
-		for _, l := range recent {
-			logLines = append(logLines, lipgloss.NewStyle().Foreground(colorMuted).Render("  "+l))
-		}
-		logsView = strings.Join(logLines, "\n")
-	}
+	note := lipgloss.NewStyle().
+		Foreground(colorMuted).
+		Italic(true).
+		Render("Esto puede tardar varios minutos...")
 
-	content := lipgloss.JoinVertical(lipgloss.Center,
+	inner := lipgloss.JoinVertical(lipgloss.Left,
+		sectionTitle.Render("EN PROGRESO"),
 		"",
 		spinnerView,
 		"",
-		logsView,
+		note,
 	)
 
-	box := contentPanelStyle.Width(64).Render(content)
+	boxW := 64
+	if m.width < 70 {
+		boxW = m.width - 6
+	}
 
-	return lipgloss.JoinVertical(
-		lipgloss.Left,
-		banner,
-		"",
-		lipgloss.NewStyle().Width(m.width).Align(lipgloss.Center).Render(box),
+	box := lipgloss.NewStyle().
+		Width(boxW).
+		Padding(1, 2).
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(colorSecondary).
+		Render(inner)
+
+	return lipgloss.Place(
+		m.width, m.height,
+		lipgloss.Center, lipgloss.Center,
+		box,
 	)
 }
 
-// renderResult muestra el resultado de una operación
+// renderResult muestra el resultado de una operación (pantalla completa)
 func (m Model) renderResult() string {
-	banner := RenderBanner(m.width)
-
-	var icon, msgStyled string
-	if m.resultIsError {
-		icon = "✗"
-		msgStyled = lipgloss.JoinVertical(lipgloss.Left,
-			errorStyle.Bold(true).Render(icon+" Error"),
-			"",
-			lipgloss.NewStyle().Foreground(colorText).Width(56).Render(m.resultMsg),
-		)
-	} else {
-		icon = "✓"
-		msgStyled = lipgloss.JoinVertical(lipgloss.Left,
-			successStyle.Bold(true).Render(icon+" Listo"),
-			"",
-			lipgloss.NewStyle().Foreground(colorText).Width(56).Render(m.resultMsg),
-		)
+	boxW := 64
+	if m.width < 70 {
+		boxW = m.width - 6
 	}
 
-	box := contentPanelStyle.Width(64).Render(msgStyled)
-	help := helpStyle.Render("enter / esc  volver al menú")
+	var borderColor lipgloss.Color
+	var title, icon string
 
-	return lipgloss.JoinVertical(
-		lipgloss.Left,
-		banner,
+	if m.resultIsError {
+		borderColor = colorError
+		title = errorStyle.Bold(true).Render("✗  Error")
+		icon = ""
+	} else {
+		borderColor = colorSuccess
+		title = successStyle.Bold(true).Render("✓  Listo")
+		icon = ""
+	}
+	_ = icon
+
+	msg := lipgloss.NewStyle().
+		Foreground(colorText).
+		Width(boxW - 4).
+		Render(m.resultMsg)
+
+	help := lipgloss.NewStyle().
+		Foreground(colorMuted).
+		Render("↵ enter  /  esc  →  volver al menú")
+
+	inner := lipgloss.JoinVertical(lipgloss.Left,
+		title,
 		"",
-		lipgloss.NewStyle().Width(m.width).Align(lipgloss.Center).Render(box),
+		msg,
 		"",
-		lipgloss.NewStyle().Width(m.width).Align(lipgloss.Center).Render(help),
+		lipgloss.NewStyle().Foreground(colorMuted).Render(strings.Repeat("─", boxW-6)),
+		"",
+		help,
+	)
+
+	box := lipgloss.NewStyle().
+		Width(boxW).
+		Padding(1, 2).
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(borderColor).
+		Render(inner)
+
+	return lipgloss.Place(
+		m.width, m.height,
+		lipgloss.Center, lipgloss.Center,
+		box,
 	)
 }
 

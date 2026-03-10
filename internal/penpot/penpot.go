@@ -149,14 +149,14 @@ func Update(cfg Config) error {
 	return system.RunCommandInteractive("docker", "compose", "-f", composeFile, "up", "-d")
 }
 
-// Uninstall detiene y elimina todos los contenedores y datos de Penpot
+// Uninstall detiene y elimina todos los contenedores, volúmenes e imágenes de Penpot
 func Uninstall(cfg Config, removeData bool) error {
 	composeFile := filepath.Join(cfg.InstallDir, "docker-compose.yaml")
 
-	// Bajar contenedores y volúmenes si se pide eliminar datos
-	args := []string{"compose", "-f", composeFile, "down"}
+	// Bajar contenedores, volúmenes e imágenes
+	args := []string{"compose", "-f", composeFile, "down", "--remove-orphans"}
 	if removeData {
-		args = append(args, "--volumes", "--remove-orphans")
+		args = append(args, "--volumes", "--rmi", "all")
 	}
 
 	if err := system.RunCommandInteractive("docker", args...); err != nil {
@@ -164,10 +164,8 @@ func Uninstall(cfg Config, removeData bool) error {
 	}
 
 	// Eliminar directorio de instalación
-	if removeData {
-		if err := os.RemoveAll(cfg.InstallDir); err != nil {
-			return fmt.Errorf("error eliminando directorio: %w", err)
-		}
+	if err := os.RemoveAll(cfg.InstallDir); err != nil {
+		return fmt.Errorf("error eliminando directorio: %w", err)
 	}
 
 	return nil

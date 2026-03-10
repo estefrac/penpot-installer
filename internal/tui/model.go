@@ -367,7 +367,7 @@ func (m Model) executeMenuItem(label string) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case "🗑️  Desinstalar Penpot":
-		m.confirmMsg = "⚠️  Esta acción eliminará Penpot y TODOS sus datos.\n¿Estás seguro?"
+		m.confirmMsg = "⚠️  Esto eliminará contenedores, volúmenes, imágenes Docker y el directorio de instalación.\n\nLa próxima instalación descargará todo de cero.\n\n¿Estás seguro?"
 		m.confirmYes = false
 		m.confirmAction = func() tea.Cmd {
 			m.operationMsg = "Desinstalando Penpot..."

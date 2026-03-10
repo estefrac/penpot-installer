@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"github.com/estefrac/penpot-installer/internal/system"
 )
@@ -186,6 +187,7 @@ func updatePort(composeFile, newPort string) error {
 }
 
 // runStreaming ejecuta un comando y llama emit() con cada línea de output.
+// Lee stdout y stderr en goroutines separadas para no perder ninguna línea.
 func runStreaming(emit func(string), name string, args ...string) error {
 	cmd := exec.Command(name, args...)
 
@@ -202,14 +204,23 @@ func runStreaming(emit func(string), name string, args ...string) error {
 		return err
 	}
 
-	combined := io.MultiReader(stdout, stderr)
-	scanner := bufio.NewScanner(combined)
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-		if line != "" {
-			emit(line)
+	var wg sync.WaitGroup
+
+	scanPipe := func(r io.Reader) {
+		defer wg.Done()
+		scanner := bufio.NewScanner(r)
+		for scanner.Scan() {
+			line := strings.TrimSpace(scanner.Text())
+			if line != "" {
+				emit(line)
+			}
 		}
 	}
+
+	wg.Add(2)
+	go scanPipe(stdout)
+	go scanPipe(stderr)
+	wg.Wait()
 
 	return cmd.Wait()
 }

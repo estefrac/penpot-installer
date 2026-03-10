@@ -7,11 +7,11 @@ import (
 	"strings"
 
 	"github.com/AlecAivazis/survey/v2"
-	"github.com/pterm/pterm"
 	"github.com/estefrac/penpot-installer/internal/docker"
 	"github.com/estefrac/penpot-installer/internal/penpot"
 	"github.com/estefrac/penpot-installer/internal/system"
 	"github.com/estefrac/penpot-installer/internal/ui"
+	"github.com/pterm/pterm"
 )
 
 func main() {
@@ -233,9 +233,8 @@ func handleInstall(cfg penpot.Config) error {
 	}
 
 	pterm.Println()
-
-	spinner, _ := ui.Spinner("Instalando Penpot...")
-	spinner.Stop()
+	pterm.Info.Println("Iniciando instalación — esto puede tardar varios minutos la primera vez...")
+	pterm.Println()
 
 	if err := penpot.Install(cfg); err != nil {
 		return fmt.Errorf("error durante la instalación: %w", err)
@@ -387,8 +386,8 @@ func handleUninstall(cfg penpot.Config) error {
 	}
 
 	pterm.Println()
-	spinner, _ := ui.Spinner("Desinstalando Penpot...")
-	spinner.Stop()
+	pterm.Info.Println("Desinstalando Penpot...")
+	pterm.Println()
 
 	if err := penpot.Uninstall(cfg, removeData); err != nil {
 		return fmt.Errorf("error desinstalando Penpot: %w", err)

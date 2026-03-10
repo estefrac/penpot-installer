@@ -12,8 +12,6 @@ import (
 const (
 	// ComposeURL es la URL del docker-compose oficial de Penpot
 	ComposeURL = "https://raw.githubusercontent.com/penpot/penpot/main/docker/images/docker-compose.yaml"
-	// ConfigURL es la URL de la configuración oficial de Penpot
-	ConfigURL = "https://raw.githubusercontent.com/penpot/penpot/main/docker/images/config.env"
 	// DefaultPort es el puerto por defecto de Penpot
 	DefaultPort = "9001"
 	// ContainerPrefix es el prefijo de los contenedores de Penpot
@@ -102,13 +100,6 @@ func Install(cfg Config) error {
 		return fmt.Errorf("error descargando docker-compose.yaml: %w", err)
 	}
 
-	// Descargar config.env
-	fmt.Println("  → Descargando config.env...")
-	configFile := filepath.Join(cfg.InstallDir, "config.env")
-	if _, err := system.RunCommand("curl", "-fsSL", "-o", configFile, ConfigURL); err != nil {
-		return fmt.Errorf("error descargando config.env: %w", err)
-	}
-
 	// Aplicar puerto personalizado si es diferente al default
 	if cfg.Port != DefaultPort {
 		if err := updatePort(composeFile, cfg.Port); err != nil {
@@ -118,7 +109,7 @@ func Install(cfg Config) error {
 
 	// Levantar contenedores
 	fmt.Println("  → Descargando imágenes e iniciando contenedores (esto puede tardar varios minutos)...")
-	if err := system.RunCommandInteractive("docker", "compose", "-f", composeFile, "--env-file", configFile, "up", "-d"); err != nil {
+	if err := system.RunCommandInteractive("docker", "compose", "-f", composeFile, "up", "-d"); err != nil {
 		return fmt.Errorf("error iniciando contenedores: %w", err)
 	}
 
@@ -128,41 +119,42 @@ func Install(cfg Config) error {
 // Start inicia los contenedores de Penpot
 func Start(cfg Config) error {
 	composeFile := filepath.Join(cfg.InstallDir, "docker-compose.yaml")
-	configFile := filepath.Join(cfg.InstallDir, "config.env")
-	return system.RunCommandInteractive("docker", "compose", "-f", composeFile, "--env-file", configFile, "start")
+	return system.RunCommandInteractive("docker", "compose", "-f", composeFile, "start")
 }
 
 // Stop detiene los contenedores de Penpot
 func Stop(cfg Config) error {
 	composeFile := filepath.Join(cfg.InstallDir, "docker-compose.yaml")
-	configFile := filepath.Join(cfg.InstallDir, "config.env")
-	return system.RunCommandInteractive("docker", "compose", "-f", composeFile, "--env-file", configFile, "stop")
+	return system.RunCommandInteractive("docker", "compose", "-f", composeFile, "stop")
 }
 
-// Update actualiza Penpot bajando las últimas imágenes
+// Update actualiza Penpot bajando las últimas imágenes y el compose oficial
 func Update(cfg Config) error {
 	composeFile := filepath.Join(cfg.InstallDir, "docker-compose.yaml")
-	configFile := filepath.Join(cfg.InstallDir, "config.env")
 
 	fmt.Println("  → Deteniendo contenedores...")
-	_ = system.RunCommandInteractive("docker", "compose", "-f", composeFile, "--env-file", configFile, "down")
+	_ = system.RunCommandInteractive("docker", "compose", "-f", composeFile, "down")
+
+	fmt.Println("  → Actualizando docker-compose.yaml...")
+	if _, err := system.RunCommand("curl", "-fsSL", "-o", composeFile, ComposeURL); err != nil {
+		return fmt.Errorf("error actualizando docker-compose.yaml: %w", err)
+	}
 
 	fmt.Println("  → Descargando últimas imágenes...")
-	if err := system.RunCommandInteractive("docker", "compose", "-f", composeFile, "--env-file", configFile, "pull"); err != nil {
+	if err := system.RunCommandInteractive("docker", "compose", "-f", composeFile, "pull"); err != nil {
 		return fmt.Errorf("error actualizando imágenes: %w", err)
 	}
 
 	fmt.Println("  → Iniciando contenedores actualizados...")
-	return system.RunCommandInteractive("docker", "compose", "-f", composeFile, "--env-file", configFile, "up", "-d")
+	return system.RunCommandInteractive("docker", "compose", "-f", composeFile, "up", "-d")
 }
 
 // Uninstall detiene y elimina todos los contenedores y datos de Penpot
 func Uninstall(cfg Config, removeData bool) error {
 	composeFile := filepath.Join(cfg.InstallDir, "docker-compose.yaml")
-	configFile := filepath.Join(cfg.InstallDir, "config.env")
 
 	// Bajar contenedores y volúmenes si se pide eliminar datos
-	args := []string{"compose", "-f", composeFile, "--env-file", configFile, "down"}
+	args := []string{"compose", "-f", composeFile, "down"}
 	if removeData {
 		args = append(args, "--volumes", "--remove-orphans")
 	}

@@ -93,7 +93,9 @@ El instalador te preguntará:
 - **Puerto** (por defecto: `9001`)
 - **Confirmación** antes de proceder
 
-Luego descarga las imágenes de Docker e inicia los contenedores automáticamente.
+Luego verás el progreso real de Docker en la terminal — las imágenes se van descargando una por una (~2-3 GB en total). Esto es normal, no es un error. Cuando termine, el instalador te confirma que todo está listo y te ofrece abrir el navegador directamente.
+
+> ⏱️ La primera instalación puede tardar entre 5 y 15 minutos dependiendo de tu conexión.
 
 ### Una vez instalado
 
@@ -128,7 +130,7 @@ La primera vez que accedas tendrás que **crear una cuenta** (es local, no va a 
 | 🚀 **Instalar Penpot** | Descarga imágenes y levanta los contenedores |
 | ▶️ **Iniciar Penpot** | Inicia los contenedores si están detenidos |
 | ⏹️ **Detener Penpot** | Detiene los contenedores (los datos se conservan) |
-| 🔄 **Actualizar Penpot** | Baja las últimas imágenes y reinicia |
+| 🔄 **Actualizar Penpot** | Actualiza el `docker-compose.yaml` oficial, baja las últimas imágenes y reinicia |
 | 📊 **Ver estado** | Muestra el estado de cada contenedor |
 | 🌐 **Abrir en navegador** | Abre `http://localhost:9001` directamente |
 | 🗑️ **Desinstalar Penpot** | Elimina contenedores (con opción de borrar datos) |

@@ -27,6 +27,7 @@ const (
 	opUninstallKeepData
 	opUninstallWithData
 	opInstall
+	opSelfUpdate
 )
 
 // view representa cada pantalla del TUI
@@ -521,6 +522,13 @@ func (m Model) executeMenuItem(label string) (tea.Model, tea.Cmd) {
 		return m, tea.Quit
 	}
 
+	// Captura dinámica: "⬆️  Actualizar penpot-manager (vX.Y.Z)"
+	if strings.HasPrefix(label, "⬆️") {
+		m.operationMsg = fmt.Sprintf("Actualizando penpot-manager a %s...", m.updateAvailable)
+		m.pendingOp = opSelfUpdate
+		return m.executePendingOp()
+	}
+
 	return m, nil
 }
 
@@ -562,6 +570,8 @@ func (m Model) executePendingOp() (tea.Model, tea.Cmd) {
 	case opUninstallWithData:
 		m.operationMsg = "Desinstalando Penpot (incluyendo datos)..."
 		return m.uninstallPenpotCmd()
+	case opSelfUpdate:
+		return m.selfUpdateCmd()
 	}
 	m.currentView = viewMenu
 	return m, tea.ClearScreen
@@ -593,9 +603,16 @@ func (m *Model) buildMenuItems() {
 		}
 		items = append(items,
 			menuItem{label: "🗑️  Desinstalar Penpot"},
-			menuItem{label: "❌ Salir"},
 		)
 	}
+
+	if m.updateAvailable != "" {
+		items = append(items,
+			menuItem{label: fmt.Sprintf("⬆️  Actualizar penpot-manager (%s)", m.updateAvailable)},
+		)
+	}
+
+	items = append(items, menuItem{label: "❌ Salir"})
 
 	m.menuItems = items
 	if m.menuCursor >= len(items) {
@@ -1279,6 +1296,25 @@ func installDockerCmd() tea.Cmd {
 		}
 		return msgDockerInstallDone{}
 	}
+}
+
+// selfUpdateCmd descarga el binario nuevo y reemplaza el ejecutable actual
+func (m Model) selfUpdateCmd() (Model, tea.Cmd) {
+	m.logs = nil
+	m.servicesPulling = make(map[string]bool)
+	m.servicesPulled = nil
+	m.servicesStarted = nil
+	m.operationDone = false
+	m.currentView = viewOperation
+
+	cmd := func() tea.Msg {
+		if err := updater.SelfUpdate(m.updateAvailable, func(line string) {}); err != nil {
+			return msgOperationError{err}
+		}
+		return msgOperationDone{"¡penpot-manager actualizado correctamente!\n\nReiniciá el programa para usar la nueva versión."}
+	}
+
+	return m, tea.Batch(m.spinner.Tick, cmd, pollLogCmd())
 }
 
 // startDockerCmd inicia el daemon de Docker

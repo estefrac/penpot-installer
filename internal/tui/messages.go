@@ -46,3 +46,9 @@ type msgDockerInstallDone struct{}
 
 // msgDockerInstallError se envía cuando la instalación de Docker falló
 type msgDockerInstallError struct{ err error }
+
+// msgUpdateAvailable se envía cuando hay una versión nueva disponible
+type msgUpdateAvailable struct{ latestVersion string }
+
+// msgUpdateCheckDone se envía cuando el chequeo terminó sin update
+type msgUpdateCheckDone struct{}

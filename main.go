@@ -9,9 +9,12 @@ import (
 	"github.com/estefrac/penpot-installer/internal/tui"
 )
 
+// version es inyectada en el build con -ldflags "-X main.version=vX.Y.Z"
+var version = "dev"
+
 func main() {
 	p := tea.NewProgram(
-		tui.New(),
+		tui.New(version),
 		tea.WithAltScreen(),       // Usa el buffer alternativo (no ensucia el historial)
 		tea.WithMouseCellMotion(), // Soporte opcional de mouse
 	)

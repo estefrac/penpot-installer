@@ -13,6 +13,7 @@ import (
 	"github.com/estefrac/penpot-installer/internal/docker"
 	"github.com/estefrac/penpot-installer/internal/penpot"
 	"github.com/estefrac/penpot-installer/internal/system"
+	"github.com/estefrac/penpot-installer/internal/updater"
 )
 
 // pendingOpKind identifica qué operación está pendiente de confirmación
@@ -64,6 +65,10 @@ type Model struct {
 	dockerChecking bool
 	dockerOS       string // "linux" | "windows" — para la vista de instalación de Docker
 
+	// Versión y update
+	version         string
+	updateAvailable string // vacío si no hay update, o "vX.Y.Z" si hay
+
 	// Menú
 	menuItems  []menuItem
 	menuCursor int
@@ -101,7 +106,7 @@ type Model struct {
 }
 
 // New crea un nuevo modelo con valores por defecto
-func New() Model {
+func New(version string) Model {
 	sp := spinner.New()
 	sp.Spinner = spinner.Dot
 	sp.Style = lipgloss.NewStyle().Foreground(colorSecondary)
@@ -121,6 +126,7 @@ func New() Model {
 		spinner:        sp,
 		inputs:         []textinput.Model{dirInput, portInput},
 		dockerChecking: true,
+		version:        version,
 	}
 
 	m.inputs[0].SetValue(m.cfg.InstallDir)
@@ -134,6 +140,7 @@ func (m Model) Init() tea.Cmd {
 	return tea.Batch(
 		m.spinner.Tick,
 		checkDockerCmd(),
+		checkUpdateCmd(m.version),
 	)
 }
 
@@ -153,6 +160,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		var cmd tea.Cmd
 		m.spinner, cmd = m.spinner.Update(msg)
 		return m, cmd
+
+	case msgUpdateAvailable:
+		m.updateAvailable = msg.latestVersion
+		return m, nil
+
+	case msgUpdateCheckDone:
+		return m, nil
 
 	case msgDockerReady:
 		m.dockerReady = true
@@ -673,14 +687,35 @@ func (m Model) renderMain() string {
 
 	help := helpStyle.Render("↑↓ navegar  ·  enter seleccionar  ·  q salir")
 
-	return lipgloss.JoinVertical(
-		lipgloss.Left,
-		banner,
-		"",
-		panels,
-		"",
+	// Banner de update disponible
+	var updateBanner string
+	if m.updateAvailable != "" {
+		updateBanner = lipgloss.NewStyle().
+			Foreground(colorBg).
+			Background(colorWarning).
+			Bold(true).
+			Padding(0, 2).
+			Render(fmt.Sprintf("  Nueva versión disponible: %s  →  descargá el binario actualizado", m.updateAvailable))
+		updateBanner = lipgloss.NewStyle().Width(m.width).Align(lipgloss.Center).Render(updateBanner)
+	}
+
+	// Versión actual (pie de página)
+	versionLine := ""
+	if m.version != "" && m.version != "dev" {
+		versionLine = lipgloss.NewStyle().Foreground(colorMuted).Render(m.version)
+		versionLine = lipgloss.NewStyle().Width(m.width).Align(lipgloss.Right).Render(versionLine)
+	}
+
+	content := []string{banner, "", panels, ""}
+	if updateBanner != "" {
+		content = append(content, updateBanner, "")
+	}
+	content = append(content,
 		lipgloss.NewStyle().Width(m.width).Align(lipgloss.Center).Render(help),
+		versionLine,
 	)
+
+	return lipgloss.JoinVertical(lipgloss.Left, content...)
 }
 
 // renderMenuPanel renderiza el panel lateral del menú
@@ -1207,6 +1242,17 @@ func (m Model) renderUninstallData() string {
 		Render(inner)
 
 	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, box)
+}
+
+// checkUpdateCmd consulta GitHub en background para ver si hay una versión nueva
+func checkUpdateCmd(currentVersion string) tea.Cmd {
+	return func() tea.Msg {
+		result := updater.Check(currentVersion)
+		if result.HasUpdate {
+			return msgUpdateAvailable{latestVersion: result.LatestVersion}
+		}
+		return msgUpdateCheckDone{}
+	}
 }
 
 // checkDockerCmd verifica si Docker está disponible

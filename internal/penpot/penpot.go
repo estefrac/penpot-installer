@@ -275,15 +275,48 @@ func UpdateStreaming(cfg Config, emit func(string)) error {
 	return runStreaming(emit, "docker", "compose", "-f", composeFile, "up", "-d")
 }
 
+// penpotImages son las imágenes de Docker de Penpot a eliminar explícitamente
+var penpotImages = []string{
+	"penpotapp/frontend",
+	"penpotapp/backend",
+	"penpotapp/exporter",
+}
+
+// penpotVolumes son los volúmenes de Docker de Penpot a eliminar explícitamente
+var penpotVolumes = []string{
+	"penpot_penpot_assets",
+	"penpot_penpot_postgres_v15",
+}
+
+// removeImages elimina las imágenes de Penpot explícitamente
+func removeImages(emit func(string)) {
+	for _, img := range penpotImages {
+		emit(fmt.Sprintf("Eliminando imagen %s...", img))
+		// Ignoramos el error — si no existe, no importa
+		_ = runStreaming(emit, "docker", "rmi", "-f", img)
+	}
+}
+
+// removeVolumes elimina los volúmenes de Penpot explícitamente
+func removeVolumes(emit func(string)) {
+	for _, vol := range penpotVolumes {
+		emit(fmt.Sprintf("Eliminando volumen %s...", vol))
+		_ = runStreaming(emit, "docker", "volume", "rm", vol)
+	}
+}
+
 // UninstallStreaming desinstala Penpot eliminando contenedores, volúmenes e imágenes
 func UninstallStreaming(cfg Config, emit func(string)) error {
 	composeFile := filepath.Join(cfg.InstallDir, "docker-compose.yaml")
 
-	emit("Eliminando contenedores, volúmenes e imágenes...")
+	emit("Bajando contenedores...")
 	if err := runStreaming(emit, "docker", "compose", "-f", composeFile, "down",
-		"--volumes", "--rmi", "all", "--remove-orphans"); err != nil {
-		return fmt.Errorf("error eliminando contenedores: %w", err)
+		"--volumes", "--remove-orphans"); err != nil {
+		return fmt.Errorf("error bajando contenedores: %w", err)
 	}
+
+	removeImages(emit)
+	removeVolumes(emit)
 
 	emit("Eliminando directorio de instalación...")
 	if err := os.RemoveAll(cfg.InstallDir); err != nil {
@@ -298,11 +331,13 @@ func UninstallStreaming(cfg Config, emit func(string)) error {
 func UninstallKeepDataStreaming(cfg Config, emit func(string)) error {
 	composeFile := filepath.Join(cfg.InstallDir, "docker-compose.yaml")
 
-	emit("Eliminando contenedores e imágenes (conservando datos)...")
+	emit("Bajando contenedores...")
 	if err := runStreaming(emit, "docker", "compose", "-f", composeFile, "down",
-		"--rmi", "all", "--remove-orphans"); err != nil {
-		return fmt.Errorf("error eliminando contenedores: %w", err)
+		"--remove-orphans"); err != nil {
+		return fmt.Errorf("error bajando contenedores: %w", err)
 	}
+
+	removeImages(emit)
 
 	emit("Eliminando directorio de instalación...")
 	if err := os.RemoveAll(cfg.InstallDir); err != nil {

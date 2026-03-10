@@ -287,10 +287,14 @@ func UpdateStreaming(cfg Config, emit func(string)) error {
 }
 
 // penpotImages son las imágenes de Docker de Penpot a eliminar explícitamente
+// Incluye todas las imágenes del docker-compose oficial (6 servicios)
 var penpotImages = []string{
 	"penpotapp/frontend",
 	"penpotapp/backend",
 	"penpotapp/exporter",
+	"postgres:15",
+	"valkey/valkey:8.1",
+	"sj26/mailcatcher:latest",
 }
 
 // penpotVolumes son los volúmenes de Docker de Penpot a eliminar explícitamente

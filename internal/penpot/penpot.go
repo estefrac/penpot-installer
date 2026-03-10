@@ -299,12 +299,32 @@ var penpotVolumes = []string{
 	"penpot_penpot_postgres_v15",
 }
 
+// removeContainersByImage para y elimina todos los contenedores que usen imágenes de Penpot
+func removeContainersByImage(emit func(string)) {
+	for _, img := range penpotImages {
+		// Buscar contenedores que usen esta imagen (corriendo o detenidos)
+		out, err := exec.Command("docker", "ps", "-a", "--filter", "ancestor="+img, "--format", "{{.ID}}").Output()
+		if err != nil || strings.TrimSpace(string(out)) == "" {
+			continue
+		}
+		ids := strings.Fields(strings.TrimSpace(string(out)))
+		for _, id := range ids {
+			emit(fmt.Sprintf("Deteniendo contenedor %s...", id[:12]))
+			_ = exec.Command("docker", "rm", "-f", id).Run()
+		}
+	}
+}
+
 // removeImages elimina las imágenes de Penpot explícitamente
 func removeImages(emit func(string)) {
+	// Primero eliminar cualquier contenedor que use estas imágenes
+	removeContainersByImage(emit)
+
 	for _, img := range penpotImages {
 		emit(fmt.Sprintf("Eliminando imagen %s...", img))
-		// Ignoramos el error — si no existe, no importa
-		_ = runStreaming(emit, "docker", "rmi", "-f", img)
+		if err := runStreaming(emit, "docker", "rmi", "-f", img); err != nil {
+			emit(fmt.Sprintf("  (imagen %s no encontrada o ya eliminada)", img))
+		}
 	}
 }
 

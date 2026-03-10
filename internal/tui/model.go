@@ -583,8 +583,7 @@ func (m *Model) buildMenuItems() {
 
 	if !m.isInstalled {
 		items = append(items,
-			menuItem{label: "🚀 Instalar Penpot", icon: "🚀"},
-			menuItem{label: "❌ Salir", icon: "❌"},
+			menuItem{label: "🚀 Instalar Penpot"},
 		)
 	} else {
 		if m.isRunning {

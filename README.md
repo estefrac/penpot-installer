@@ -142,7 +142,7 @@ La primera vez que accedas tendrás que **crear una cuenta** (es local, no va a 
 Penpot guarda todo en **volúmenes de Docker**. Eso significa que:
 
 - **Detener Penpot** → tus proyectos y archivos están seguros
-- **Actualizar Penpot** → tus datos se conservan
+- **Actualizar Penpot** → refresca la configuración oficial y las imágenes, tus datos se conservan
 - **Desinstalar sin borrar datos** → los volúmenes quedan en Docker, podés reinstalar y recuperarlos
 - **Desinstalar borrando datos** → ⚠️ esto es irreversible, el instalador te advierte y pide doble confirmación
 

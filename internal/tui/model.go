@@ -134,7 +134,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.isRunning = penpot.IsRunning()
 		m.buildMenuItems()
 		m.currentView = viewMenu
-		return m, nil
+		return m, tea.ClearScreen
 
 	case msgDockerError:
 		m.dockerReady = false
@@ -142,7 +142,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.resultMsg = fmt.Sprintf("Error con Docker: %s", msg.err.Error())
 		m.resultIsError = true
 		m.currentView = viewResult
-		return m, nil
+		return m, tea.ClearScreen
 
 	case msgOperationDone:
 		m.operationDone = true
@@ -152,21 +152,21 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.isRunning = penpot.IsRunning()
 		m.buildMenuItems()
 		m.currentView = viewResult
-		return m, nil
+		return m, tea.ClearScreen
 
 	case msgOperationError:
 		m.operationDone = true
 		m.resultMsg = msg.err.Error()
 		m.resultIsError = true
 		m.currentView = viewResult
-		return m, nil
+		return m, tea.ClearScreen
 
 	case msgStatusLoaded:
 		m.isInstalled = msg.isInstalled
 		m.isRunning = msg.isRunning
 		m.containers = msg.containers
 		m.currentView = viewStatus
-		return m, nil
+		return m, tea.ClearScreen
 	}
 
 	// Delegar updates a componentes activos
@@ -268,7 +268,7 @@ func (m Model) handleInstallKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case tea.KeyEsc:
 		m.currentView = viewMenu
-		return m, nil
+		return m, tea.ClearScreen
 	}
 
 	// Pasar el evento al input activo
@@ -286,6 +286,7 @@ func (m Model) handleConfirmKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(m.spinner.Tick, m.confirmAction())
 	case "n", "N", tea.KeyEsc.String():
 		m.currentView = viewMenu
+		return m, tea.ClearScreen
 	case tea.KeyEnter.String():
 		if m.confirmYes {
 			m.currentView = viewOperation
@@ -304,6 +305,7 @@ func (m Model) handleResultKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case tea.KeyEnter, tea.KeyEsc:
 		m.currentView = viewMenu
 		m.logs = nil
+		return m, tea.ClearScreen
 	}
 	return m, nil
 }
@@ -312,6 +314,7 @@ func (m Model) handleStatusKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.Type {
 	case tea.KeyEnter, tea.KeyEsc:
 		m.currentView = viewMenu
+		return m, tea.ClearScreen
 	}
 	switch msg.String() {
 	case "q", "Q":
@@ -328,7 +331,7 @@ func (m Model) executeMenuItem(label string) (tea.Model, tea.Cmd) {
 		m.inputFocus = 0
 		m.inputs[0].Focus()
 		m.inputs[1].Blur()
-		return m, nil
+		return m, tea.ClearScreen
 
 	case "▶️  Iniciar Penpot":
 		m.operationMsg = "Iniciando Penpot..."
@@ -685,49 +688,81 @@ func (m Model) renderStatus() string {
 	)
 }
 
-// renderConfirm renderiza la pantalla de confirmación
+// renderConfirm renderiza la pantalla de confirmación (pantalla completa)
 func (m Model) renderConfirm() string {
-	banner := RenderBanner(m.width)
+	boxW := 56
+	if m.width < 62 {
+		boxW = m.width - 6
+	}
 
 	msg := lipgloss.NewStyle().
 		Foreground(colorText).
-		Width(50).
+		Width(boxW - 4).
 		Render(m.confirmMsg)
 
-	var yesStyle, noStyle lipgloss.Style
+	// Botón base — mismo tamaño y borde para ambos
+	btnBase := lipgloss.NewStyle().
+		Width(10).
+		Align(lipgloss.Center).
+		Padding(0, 1).
+		Border(lipgloss.RoundedBorder())
+
+	var yesLabel, noLabel string
 	if m.confirmYes {
-		yesStyle = lipgloss.NewStyle().Background(colorSuccess).Foreground(colorBg).Padding(0, 2).Bold(true)
-		noStyle = lipgloss.NewStyle().Foreground(colorMuted).Padding(0, 2).Border(lipgloss.RoundedBorder()).BorderForeground(colorMuted)
+		// Sí: seleccionado — fondo verde, cursor visible
+		yesLabel = btnBase.
+			BorderForeground(colorSuccess).
+			Background(colorSuccess).
+			Foreground(colorBg).
+			Bold(true).
+			Render("▸  Sí")
+		// No: inactivo — borde gris, sin cursor
+		noLabel = btnBase.
+			BorderForeground(colorMuted).
+			Foreground(colorMuted).
+			Render("   No")
 	} else {
-		yesStyle = lipgloss.NewStyle().Foreground(colorMuted).Padding(0, 2).Border(lipgloss.RoundedBorder()).BorderForeground(colorMuted)
-		noStyle = lipgloss.NewStyle().Background(colorError).Foreground(colorBg).Padding(0, 2).Bold(true)
+		// Sí: inactivo
+		yesLabel = btnBase.
+			BorderForeground(colorMuted).
+			Foreground(colorMuted).
+			Render("   Sí")
+		// No: seleccionado — fondo rojo, cursor visible
+		noLabel = btnBase.
+			BorderForeground(colorError).
+			Background(colorError).
+			Foreground(colorBg).
+			Bold(true).
+			Render("▸  No")
 	}
 
-	buttons := lipgloss.JoinHorizontal(lipgloss.Center,
-		yesStyle.Render("  Sí  "),
-		"   ",
-		noStyle.Render("  No  "),
+	buttons := lipgloss.JoinHorizontal(lipgloss.Center, yesLabel, "    ", noLabel)
+
+	help := lipgloss.NewStyle().
+		Foreground(colorMuted).
+		Render("←→ / tab  alternar   ·   enter  confirmar")
+
+	inner := lipgloss.JoinVertical(lipgloss.Center,
+		sectionTitle.Render("CONFIRMACIÓN"),
+		"",
+		msg,
+		"",
+		buttons,
+		"",
+		help,
 	)
 
-	box := contentPanelStyle.Width(56).Render(
-		lipgloss.JoinVertical(lipgloss.Center,
-			sectionTitle.Render("CONFIRMACIÓN"),
-			"",
-			msg,
-			"",
-			buttons,
-		),
-	)
+	box := lipgloss.NewStyle().
+		Width(boxW).
+		Padding(1, 2).
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(colorPrimary).
+		Render(inner)
 
-	help := helpStyle.Render("s/y confirmar  ·  n cancelar  ·  ←→ / tab alternar  ·  enter aceptar")
-
-	return lipgloss.JoinVertical(
-		lipgloss.Left,
-		banner,
-		"",
-		lipgloss.NewStyle().Width(m.width).Align(lipgloss.Center).Render(box),
-		"",
-		lipgloss.NewStyle().Width(m.width).Align(lipgloss.Center).Render(help),
+	return lipgloss.Place(
+		m.width, m.height,
+		lipgloss.Center, lipgloss.Center,
+		box,
 	)
 }
 

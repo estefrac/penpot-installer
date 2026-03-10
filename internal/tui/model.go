@@ -156,6 +156,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.currentView = viewDockerNotRunning
 		return m, tea.ClearScreen
 
+	case msgLogLine:
+		m.logs = append(m.logs, msg.line)
+		return m, nil
+
 	case msgDockerInstallDone:
 		// Docker recién instalado — volver a verificar
 		m.operationMsg = ""
@@ -846,31 +850,81 @@ func (m Model) renderConfirm() string {
 	)
 }
 
-// renderOperation muestra el spinner durante una operación (pantalla completa)
+// renderOperation muestra el spinner + logs en vivo (pantalla completa)
 func (m Model) renderOperation() string {
-	spinnerView := lipgloss.JoinHorizontal(lipgloss.Left,
+	boxW := 72
+	if m.width < 78 {
+		boxW = m.width - 6
+	}
+	logW := boxW - 6 // ancho interior para las líneas de log
+
+	// Header con spinner
+	header := lipgloss.JoinHorizontal(lipgloss.Left,
 		m.spinner.View(),
 		" ",
 		lipgloss.NewStyle().Foreground(colorText).Bold(true).Render(m.operationMsg),
 	)
 
+	// Área de logs — últimas N líneas que entren en la pantalla
+	maxLogs := m.height/2 - 6
+	if maxLogs < 4 {
+		maxLogs = 4
+	}
+
+	var logLines []string
+	if len(m.logs) == 0 {
+		logLines = append(logLines,
+			lipgloss.NewStyle().Foreground(colorMuted).Italic(true).Render("Esperando output..."),
+		)
+	} else {
+		recent := m.logs
+		if len(recent) > maxLogs {
+			recent = recent[len(recent)-maxLogs:]
+		}
+		for _, l := range recent {
+			// Truncar líneas muy largas
+			if len(l) > logW {
+				l = l[:logW-3] + "..."
+			}
+			// Colorear según contenido
+			var styled string
+			ll := strings.ToLower(l)
+			switch {
+			case strings.Contains(ll, "error") || strings.Contains(ll, "failed"):
+				styled = errorStyle.Render(l)
+			case strings.Contains(ll, "pull") || strings.Contains(ll, "download") ||
+				strings.Contains(ll, "extract") || strings.Contains(ll, "descarg"):
+				styled = lipgloss.NewStyle().Foreground(colorSecondary).Render(l)
+			case strings.Contains(ll, "done") || strings.Contains(ll, "complete") ||
+				strings.Contains(ll, "started") || strings.Contains(ll, "listo"):
+				styled = successStyle.Render(l)
+			default:
+				styled = lipgloss.NewStyle().Foreground(colorMuted).Render(l)
+			}
+			logLines = append(logLines, styled)
+		}
+	}
+
+	logArea := lipgloss.NewStyle().
+		Width(logW).
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(colorMuted).
+		Padding(0, 1).
+		Render(strings.Join(logLines, "\n"))
+
 	note := lipgloss.NewStyle().
-		Foreground(colorMuted).
-		Italic(true).
+		Foreground(colorMuted).Italic(true).
 		Render("Esto puede tardar varios minutos...")
 
 	inner := lipgloss.JoinVertical(lipgloss.Left,
 		sectionTitle.Render("EN PROGRESO"),
 		"",
-		spinnerView,
+		header,
+		"",
+		logArea,
 		"",
 		note,
 	)
-
-	boxW := 64
-	if m.width < 70 {
-		boxW = m.width - 6
-	}
 
 	box := lipgloss.NewStyle().
 		Width(boxW).
@@ -1051,56 +1105,78 @@ func startDockerCmd() tea.Cmd {
 	}
 }
 
-// installPenpotCmd ejecuta la instalación de Penpot
+// installPenpotCmd ejecuta la instalación de Penpot con streaming
 func installPenpotCmd(cfg penpot.Config) tea.Cmd {
-	return func() tea.Msg {
-		if err := penpot.Install(cfg); err != nil {
-			return msgOperationError{err}
-		}
-		return msgOperationDone{fmt.Sprintf(
-			"¡Penpot instalado correctamente! 🎨\n\nAccedé en: http://localhost:%s\n\nLa primera vez puede tardar unos segundos en estar listo.",
-			cfg.Port,
-		)}
-	}
+	return streamingPenpotCmd(
+		func(emit func(string)) error { return penpot.InstallStreaming(cfg, emit) },
+		fmt.Sprintf("¡Penpot instalado correctamente! 🎨\n\nAccedé en: http://localhost:%s\n\nLa primera vez puede tardar unos segundos en estar listo.", cfg.Port),
+	)
 }
 
-// startPenpotCmd inicia Penpot
+// startPenpotCmd inicia Penpot con streaming
 func startPenpotCmd(cfg penpot.Config) tea.Cmd {
-	return func() tea.Msg {
-		if err := penpot.Start(cfg); err != nil {
-			return msgOperationError{err}
-		}
-		return msgOperationDone{fmt.Sprintf("Penpot iniciado ▶️\n\nAccedé en: http://localhost:%s", cfg.Port)}
-	}
+	return streamingPenpotCmd(
+		func(emit func(string)) error { return penpot.StartStreaming(cfg, emit) },
+		fmt.Sprintf("Penpot iniciado ▶️\n\nAccedé en: http://localhost:%s", cfg.Port),
+	)
 }
 
-// stopPenpotCmd detiene Penpot
+// stopPenpotCmd detiene Penpot con streaming
 func stopPenpotCmd(cfg penpot.Config) tea.Cmd {
-	return func() tea.Msg {
-		if err := penpot.Stop(cfg); err != nil {
-			return msgOperationError{err}
-		}
-		return msgOperationDone{"Penpot detenido ⏹️"}
-	}
+	return streamingPenpotCmd(
+		func(emit func(string)) error { return penpot.StopStreaming(cfg, emit) },
+		"Penpot detenido ⏹️",
+	)
 }
 
-// updatePenpotCmd actualiza Penpot
+// updatePenpotCmd actualiza Penpot con streaming
 func updatePenpotCmd(cfg penpot.Config) tea.Cmd {
-	return func() tea.Msg {
-		if err := penpot.Update(cfg); err != nil {
-			return msgOperationError{err}
-		}
-		return msgOperationDone{"¡Penpot actualizado correctamente! 🎉"}
-	}
+	return streamingPenpotCmd(
+		func(emit func(string)) error { return penpot.UpdateStreaming(cfg, emit) },
+		"¡Penpot actualizado correctamente! 🎉",
+	)
 }
 
-// uninstallPenpotCmd desinstala Penpot
+// uninstallPenpotCmd desinstala Penpot con streaming
 func uninstallPenpotCmd(cfg penpot.Config) tea.Cmd {
+	return streamingPenpotCmd(
+		func(emit func(string)) error { return penpot.UninstallStreaming(cfg, emit) },
+		"Penpot desinstalado correctamente.",
+	)
+}
+
+// streamingPenpotCmd ejecuta una operación que emite líneas y las envía
+// al TUI como mensajes individuales de Bubble Tea usando tea.Sequence.
+func streamingPenpotCmd(op func(emit func(string)) error, doneMsg string) tea.Cmd {
 	return func() tea.Msg {
-		if err := penpot.Uninstall(cfg, true); err != nil {
-			return msgOperationError{err}
+		lines := make(chan string, 128)
+		errCh := make(chan error, 1)
+
+		go func() {
+			errCh <- op(func(line string) {
+				lines <- line
+			})
+			close(lines)
+		}()
+
+		// Drenar el canal emitiendo cada línea como msgLogLine
+		// Bubble Tea ejecuta Cmd en goroutines, así que esto bloquea
+		// hasta que termina — pero cada msgLogLine se despacha
+		// usando un canal intermedio con tea.Sequence via poll
+		var cmds []tea.Cmd
+		for line := range lines {
+			l := line // captura
+			cmds = append(cmds, func() tea.Msg { return msgLogLine{l} })
 		}
-		return msgOperationDone{"Penpot desinstalado correctamente."}
+
+		err := <-errCh
+		if err != nil {
+			cmds = append(cmds, func() tea.Msg { return msgOperationError{err} })
+		} else {
+			cmds = append(cmds, func() tea.Msg { return msgOperationDone{doneMsg} })
+		}
+
+		return tea.Sequence(cmds...)()
 	}
 }
 

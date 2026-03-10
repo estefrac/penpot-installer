@@ -1,8 +1,11 @@
 package penpot
 
 import (
+	"bufio"
 	"fmt"
+	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -180,4 +183,113 @@ func updatePort(composeFile, newPort string) error {
 
 	updated := strings.ReplaceAll(string(content), "9001:", newPort+":")
 	return os.WriteFile(composeFile, []byte(updated), 0644)
+}
+
+// runStreaming ejecuta un comando y llama emit() con cada línea de output.
+func runStreaming(emit func(string), name string, args ...string) error {
+	cmd := exec.Command(name, args...)
+
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		return err
+	}
+	stderr, err := cmd.StderrPipe()
+	if err != nil {
+		return err
+	}
+
+	if err := cmd.Start(); err != nil {
+		return err
+	}
+
+	combined := io.MultiReader(stdout, stderr)
+	scanner := bufio.NewScanner(combined)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line != "" {
+			emit(line)
+		}
+	}
+
+	return cmd.Wait()
+}
+
+// InstallStreaming instala Penpot emitiendo líneas de progreso
+func InstallStreaming(cfg Config, emit func(string)) error {
+	if err := os.MkdirAll(cfg.InstallDir, 0755); err != nil {
+		return fmt.Errorf("error creando directorio: %w", err)
+	}
+
+	emit("Descargando docker-compose.yaml...")
+	composeFile := filepath.Join(cfg.InstallDir, "docker-compose.yaml")
+	if _, err := system.RunCommand("curl", "-fsSL", "-o", composeFile, ComposeURL); err != nil {
+		return fmt.Errorf("error descargando docker-compose.yaml: %w", err)
+	}
+	emit("docker-compose.yaml descargado")
+
+	if cfg.Port != DefaultPort {
+		if err := updatePort(composeFile, cfg.Port); err != nil {
+			return fmt.Errorf("error actualizando puerto: %w", err)
+		}
+	}
+
+	emit("Descargando imágenes e iniciando contenedores...")
+	return runStreaming(emit, "docker", "compose", "-f", composeFile, "up", "-d")
+}
+
+// StartStreaming inicia Penpot emitiendo líneas de progreso
+func StartStreaming(cfg Config, emit func(string)) error {
+	composeFile := filepath.Join(cfg.InstallDir, "docker-compose.yaml")
+	emit("Iniciando contenedores...")
+	return runStreaming(emit, "docker", "compose", "-f", composeFile, "start")
+}
+
+// StopStreaming detiene Penpot emitiendo líneas de progreso
+func StopStreaming(cfg Config, emit func(string)) error {
+	composeFile := filepath.Join(cfg.InstallDir, "docker-compose.yaml")
+	emit("Deteniendo contenedores...")
+	return runStreaming(emit, "docker", "compose", "-f", composeFile, "stop")
+}
+
+// UpdateStreaming actualiza Penpot emitiendo líneas de progreso
+func UpdateStreaming(cfg Config, emit func(string)) error {
+	composeFile := filepath.Join(cfg.InstallDir, "docker-compose.yaml")
+
+	emit("Deteniendo contenedores...")
+	if err := runStreaming(emit, "docker", "compose", "-f", composeFile, "down"); err != nil {
+		return err
+	}
+
+	emit("Actualizando docker-compose.yaml...")
+	if _, err := system.RunCommand("curl", "-fsSL", "-o", composeFile, ComposeURL); err != nil {
+		return fmt.Errorf("error actualizando docker-compose.yaml: %w", err)
+	}
+	emit("docker-compose.yaml actualizado")
+
+	emit("Descargando últimas imágenes...")
+	if err := runStreaming(emit, "docker", "compose", "-f", composeFile, "pull"); err != nil {
+		return err
+	}
+
+	emit("Iniciando contenedores actualizados...")
+	return runStreaming(emit, "docker", "compose", "-f", composeFile, "up", "-d")
+}
+
+// UninstallStreaming desinstala Penpot emitiendo líneas de progreso
+func UninstallStreaming(cfg Config, emit func(string)) error {
+	composeFile := filepath.Join(cfg.InstallDir, "docker-compose.yaml")
+
+	emit("Eliminando contenedores, volúmenes e imágenes...")
+	if err := runStreaming(emit, "docker", "compose", "-f", composeFile, "down",
+		"--volumes", "--rmi", "all", "--remove-orphans"); err != nil {
+		return fmt.Errorf("error eliminando contenedores: %w", err)
+	}
+
+	emit("Eliminando directorio de instalación...")
+	if err := os.RemoveAll(cfg.InstallDir); err != nil {
+		return fmt.Errorf("error eliminando directorio: %w", err)
+	}
+	emit("Directorio eliminado")
+
+	return nil
 }

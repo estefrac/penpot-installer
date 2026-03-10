@@ -35,6 +35,9 @@ type msgDockerNotInstalled struct{ os string }
 // msgDockerNotRunning se envía cuando Docker está instalado pero no corriendo
 type msgDockerNotRunning struct{}
 
+// msgLogLine se envía con cada línea de output de un comando en streaming
+type msgLogLine struct{ line string }
+
 // msgDockerInstallDone se envía cuando la instalación de Docker completó
 type msgDockerInstallDone struct{}
 

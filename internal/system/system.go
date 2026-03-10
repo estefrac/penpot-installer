@@ -1,10 +1,13 @@
 package system
 
 import (
+	"bufio"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"runtime"
+	"strings"
 )
 
 // OS representa el sistema operativo detectado
@@ -63,6 +66,48 @@ func RunCommandInteractive(name string, args ...string) error {
 	cmd.Stderr = nil
 	cmd.Stdin = nil
 	return cmd.Run()
+}
+
+// RunCommandStreaming ejecuta un comando y envía cada línea de output
+// al canal lines. Cierra el canal cuando el comando termina.
+// El error final se envía por el canal err (con buffer 1).
+func RunCommandStreaming(lines chan<- string, name string, args ...string) <-chan error {
+	errCh := make(chan error, 1)
+
+	go func() {
+		defer close(lines)
+		cmd := exec.Command(name, args...)
+
+		stdout, err := cmd.StdoutPipe()
+		if err != nil {
+			errCh <- err
+			return
+		}
+		stderr, err := cmd.StderrPipe()
+		if err != nil {
+			errCh <- err
+			return
+		}
+
+		if err := cmd.Start(); err != nil {
+			errCh <- err
+			return
+		}
+
+		// Leer stdout y stderr en paralelo, enviar líneas al canal
+		combined := io.MultiReader(stdout, stderr)
+		scanner := bufio.NewScanner(combined)
+		for scanner.Scan() {
+			line := strings.TrimSpace(scanner.Text())
+			if line != "" {
+				lines <- line
+			}
+		}
+
+		errCh <- cmd.Wait()
+	}()
+
+	return errCh
 }
 
 // OpenBrowser abre una URL en el navegador predeterminado

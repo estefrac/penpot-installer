@@ -137,6 +137,23 @@ func installUnix(src, dst string, isUpdate bool) InstallResult {
 	} else {
 		fmt.Printf("\n  Instalando %s en %s...\n", binaryName, filepath.Dir(dst))
 	}
+
+	// Si el binario ya existe, borrarlo primero para evitar ETXTBSY.
+	// Linux no permite sobrescribir un ejecutable en uso (texto ocupado).
+	// Al borrar el inode viejo y crear uno nuevo, el kernel lo permite.
+	if isUpdate {
+		rmCmd := exec.Command("sudo", "rm", "-f", dst)
+		rmCmd.Stdin = os.Stdin
+		rmCmd.Stdout = os.Stdout
+		rmCmd.Stderr = os.Stderr
+		if err := rmCmd.Run(); err != nil {
+			return InstallResult{
+				Action:  "failed",
+				Message: fmt.Sprintf("sudo rm -f %s", dst),
+			}
+		}
+	}
+
 	cmd := exec.Command("sudo", "cp", src, dst)
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout

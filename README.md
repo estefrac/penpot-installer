@@ -53,6 +53,12 @@ curl -fsSL https://github.com/estefrac/penpot-installer/releases/latest/download
 > curl -fsSL https://github.com/estefrac/penpot-installer/releases/latest/download/penpot-manager-linux-arm64 -o /tmp/penpot-manager && chmod +x /tmp/penpot-manager && /tmp/penpot-manager
 > ```
 
+La primera vez que lo ejecutés, el binario se instala automáticamente en `/usr/local/bin` (te va a pedir la contraseña de sudo). A partir de ahí, lo ejecutás directamente:
+
+```bash
+penpot-manager
+```
+
 ### Windows
 
 1. Descargá el archivo `penpot-manager-windows-amd64.exe` desde la [página de Releases](https://github.com/estefrac/penpot-installer/releases/latest)
@@ -62,6 +68,12 @@ curl -fsSL https://github.com/estefrac/penpot-installer/releases/latest/download
    ```cmd
    penpot-manager-windows-amd64.exe
    ```
+
+La primera vez se instala en `%LOCALAPPDATA%\penpot-manager` y se agrega al PATH. Después de reiniciar la terminal, lo ejecutás directamente:
+
+```cmd
+penpot-manager
+```
 
 ---
 
@@ -157,19 +169,21 @@ GOOS=windows GOARCH=amd64 go build -o penpot-manager.exe .
 
 ```
 penpot-installer/
-├── main.go                    ← Entry point — arranca el TUI
+├── main.go                        ← Entry point — arranca el TUI
 ├── internal/
-│   ├── tui/                   ← TUI completo (Bubble Tea)
-│   │   ├── model.go           ← Modelo principal: vistas, navegación, operaciones
-│   │   ├── styles.go          ← Paleta de colores Penpot + estilos Lip Gloss
-│   │   ├── banner.go          ← ASCII art con gradiente
-│   │   └── messages.go        ← Tipos de mensajes para operaciones async
-│   ├── system/    system.go   ← Detección de OS, ejecutar comandos
-│   ├── docker/    docker.go   ← Verificar e instalar Docker
-│   └── penpot/    penpot.go   ← Instalar, actualizar y desinstalar Penpot
+│   ├── tui/                       ← TUI completo (Bubble Tea)
+│   │   ├── model.go               ← Modelo principal: vistas, navegación, operaciones
+│   │   ├── styles.go              ← Paleta de colores Penpot + estilos Lip Gloss
+│   │   ├── banner.go              ← ASCII art con gradiente
+│   │   └── messages.go            ← Tipos de mensajes para operaciones async
+│   ├── installer/  selfinstall.go ← Auto-instalación en el PATH (primera ejecución)
+│   ├── updater/                   ← Check de updates y self-update del binario
+│   ├── system/     system.go      ← Detección de OS, ejecutar comandos
+│   ├── docker/     docker.go      ← Verificar e instalar Docker
+│   └── penpot/     penpot.go      ← Instalar, actualizar y desinstalar Penpot
 └── .github/
     └── workflows/
-        └── release.yml        ← CI/CD: compila binarios en cada release
+        └── release.yml            ← CI/CD: compila binarios en cada release
 ```
 
 ---

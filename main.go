@@ -6,6 +6,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/estefrac/penpot-installer/internal/installer"
 	"github.com/estefrac/penpot-installer/internal/tui"
 )
 
@@ -13,6 +14,9 @@ import (
 var version = "dev"
 
 func main() {
+	// Auto-instalarse en el PATH la primera vez que se ejecuta
+	installer.EnsureInstalled()
+
 	p := tea.NewProgram(
 		tui.New(version),
 		tea.WithAltScreen(),       // Usa el buffer alternativo (no ensucia el historial)

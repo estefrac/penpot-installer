@@ -402,8 +402,6 @@ func UninstallKeepDataStreaming(cfg Config, emit func(string)) error {
 		return fmt.Errorf("error bajando contenedores: %w", err)
 	}
 
-	removeImages(emit)
-
 	emit("Eliminando directorio de instalación...")
 	if err := os.RemoveAll(cfg.InstallDir); err != nil {
 		return fmt.Errorf("error eliminando directorio: %w", err)

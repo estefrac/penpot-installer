@@ -525,18 +525,23 @@ func loadStatusCmd(cfg penpot.Config) tea.Cmd {
 func (m Model) executePendingOp() (tea.Model, tea.Cmd) {
 	switch m.pendingOp {
 	case opInstall:
+		m.operation = NewOperationModel(m.spinner, "Instalando Penpot...")
 		return m.installPenpotCmd()
 	case opStop:
+		m.operation = NewOperationModel(m.spinner, "Deteniendo Penpot...")
 		return m.stopPenpotCmd()
 	case opUpdate:
+		m.operation = NewOperationModel(m.spinner, "Actualizando Penpot...")
 		return m.updatePenpotCmd()
 	case opUninstall:
 		m.currentView = viewUninstallData
 		m.confirm = NewUninstallDataModel()
 		return m, tea.ClearScreen
 	case opUninstallKeepData:
+		m.operation = NewOperationModel(m.spinner, "Desinstalando Penpot...")
 		return m.uninstallKeepDataCmd()
 	case opUninstallWithData:
+		m.operation = NewOperationModel(m.spinner, "Desinstalando Penpot (incluyendo datos)...")
 		return m.uninstallPenpotCmd()
 	}
 	m.currentView = viewMenu

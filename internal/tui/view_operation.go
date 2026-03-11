@@ -114,7 +114,7 @@ func (m OperationModel) View(common Common) string {
 				styled = successStyle.Render(l)
 			case strings.HasPrefix(l, "⬇"):
 				styled = lipgloss.NewStyle().Foreground(colorSecondary).Render(l)
-			case strings.Contains(ll, "error") || strings.Contains(ll, "failed"):
+			case strings.Contains(ll, "fatal error") || strings.Contains(ll, "failed to"):
 				styled = errorStyle.Render(l)
 			default:
 				styled = lipgloss.NewStyle().Foreground(colorMuted).Render(l)

@@ -65,6 +65,7 @@ type Model struct {
 	dockerReady    bool
 	dockerChecking bool
 	dockerOS       string // "linux" | "windows" — para la vista de instalación de Docker
+	splashReady    bool   // Docker verificado, esperando Enter del usuario
 
 	// Versión y update
 	version         string
@@ -175,8 +176,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.isInstalled = penpot.IsInstalled(m.cfg)
 		m.isRunning = penpot.IsRunning()
 		m.buildMenuItems()
-		m.currentView = viewMenu
-		return m, tea.ClearScreen
+		// Quedarse en el splash esperando Enter del usuario
+		m.splashReady = true
+		return m, nil
 
 	case msgDockerNotInstalled:
 		m.dockerChecking = false
@@ -288,6 +290,8 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 
 	switch m.currentView {
+	case viewSplash:
+		return m.handleSplashKey(msg)
 	case viewMenu:
 		return m.handleMenuKey(msg)
 	case viewInstall:
@@ -306,6 +310,26 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleDockerNotRunningKey(msg)
 	case viewUninstallData:
 		return m.handleUninstallDataKey(msg)
+	}
+
+	return m, nil
+}
+
+func (m Model) handleSplashKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "q", "Q":
+		return m, tea.Quit
+	}
+
+	if !m.splashReady {
+		return m, nil
+	}
+
+	// Cualquier tecla pasa al menú cuando el splash está listo
+	switch msg.Type {
+	case tea.KeyEnter, tea.KeySpace:
+		m.currentView = viewMenu
+		return m, tea.ClearScreen
 	}
 
 	return m, nil
@@ -693,9 +717,26 @@ func (m Model) View() string {
 func (m Model) renderSplash() string {
 	w, h := m.innerWidth(), m.innerHeight()
 	banner := RenderBanner(w)
-	msg := lipgloss.NewStyle().
-		Foreground(colorMuted).
-		Render(fmt.Sprintf("%s Verificando Docker...", m.spinner.View()))
+
+	var msg string
+	if m.splashReady {
+		// Versión
+		ver := lipgloss.NewStyle().
+			Foreground(colorMuted).
+			Render(fmt.Sprintf("v%s", m.version))
+
+		// Prompt para continuar
+		prompt := lipgloss.NewStyle().
+			Foreground(colorSecondary).
+			Bold(true).
+			Render("Presioná Enter para continuar")
+
+		msg = lipgloss.JoinVertical(lipgloss.Center, ver, "", prompt)
+	} else {
+		msg = lipgloss.NewStyle().
+			Foreground(colorMuted).
+			Render(fmt.Sprintf("%s Verificando Docker...", m.spinner.View()))
+	}
 
 	return lipgloss.Place(
 		w, h,

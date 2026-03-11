@@ -69,7 +69,9 @@ func isInstalledLocation() bool {
 
 // EnsureInstalled verifica si el binario está instalado en el PATH del sistema.
 // Si no lo está, se copia a la ubicación correcta.
-// Retorna true si se instaló (primera vez), false si ya estaba.
+// Si ya existe pero se está ejecutando desde otra ubicación (ej: /tmp tras un curl),
+// se sobreescribe el binario instalado para actualizarlo.
+// Retorna true si se instaló o actualizó, false si ya estaba al día.
 // En caso de error no fatal (permisos, etc.) simplemente continúa sin instalar.
 func EnsureInstalled() bool {
 	// Si ya estamos corriendo desde la ubicación instalada, no hacer nada
@@ -77,12 +79,8 @@ func EnsureInstalled() bool {
 		return false
 	}
 
-	// Si ya existe el binario en el PATH (instalado antes), no hacer nada
 	target, err := installedPath()
 	if err != nil {
-		return false
-	}
-	if _, err := os.Stat(target); err == nil {
 		return false
 	}
 
@@ -92,25 +90,38 @@ func EnsureInstalled() bool {
 		return false
 	}
 
-	// Instalar según el OS
+	// Determinar si es instalación nueva o actualización
+	_, statErr := os.Stat(target)
+	isUpdate := statErr == nil // el archivo ya existe → es una actualización
+
+	// Instalar o actualizar según el OS
 	switch runtime.GOOS {
 	case "linux", "darwin":
-		return installUnix(execPath, target)
+		return installUnix(execPath, target, isUpdate)
 	case "windows":
-		return installWindows(execPath, target)
+		return installWindows(execPath, target, isUpdate)
 	}
 
 	return false
 }
 
 // installUnix copia el binario a /usr/local/bin usando sudo si es necesario.
-func installUnix(src, dst string) bool {
-	fmt.Printf("\n  Instalando %s en %s...\n", binaryName, filepath.Dir(dst))
+// Si isUpdate es true, sobreescribe el binario existente.
+func installUnix(src, dst string, isUpdate bool) bool {
+	if isUpdate {
+		fmt.Printf("\n  Actualizando %s en %s...\n", binaryName, filepath.Dir(dst))
+	} else {
+		fmt.Printf("\n  Instalando %s en %s...\n", binaryName, filepath.Dir(dst))
+	}
 
 	// Intentar copiar directo primero (si ya somos root)
 	if os.Geteuid() == 0 {
 		if err := copyFile(src, dst); err == nil {
-			fmt.Printf("  %s instalado. Ahora podés ejecutarlo con: %s\n\n", binaryName, binaryName)
+			action := "instalado"
+			if isUpdate {
+				action = "actualizado"
+			}
+			fmt.Printf("  %s %s. Ahora podés ejecutarlo con: %s\n\n", binaryName, action, binaryName)
 			return true
 		}
 	}
@@ -131,12 +142,17 @@ func installUnix(src, dst string) bool {
 	// Asegurar permisos de ejecución
 	_ = exec.Command("sudo", "chmod", "+x", dst).Run()
 
-	fmt.Printf("  %s instalado. Ahora podés ejecutarlo con: %s\n\n", binaryName, binaryName)
+	action := "instalado"
+	if isUpdate {
+		action = "actualizado"
+	}
+	fmt.Printf("  %s %s. Ahora podés ejecutarlo con: %s\n\n", binaryName, action, binaryName)
 	return true
 }
 
 // installWindows copia el binario a %LOCALAPPDATA%\penpot-manager y lo agrega al PATH del usuario.
-func installWindows(src, dst string) bool {
+// Si isUpdate es true, sobreescribe el binario existente.
+func installWindows(src, dst string, isUpdate bool) bool {
 	dir := filepath.Dir(dst)
 
 	// Crear directorio destino
@@ -153,7 +169,11 @@ func installWindows(src, dst string) bool {
 	// Agregar al PATH del usuario si no está
 	addToWindowsPath(dir)
 
-	fmt.Printf("\n  %s instalado en %s\n", binaryName, dir)
+	if isUpdate {
+		fmt.Printf("\n  %s actualizado en %s\n", binaryName, dir)
+	} else {
+		fmt.Printf("\n  %s instalado en %s\n", binaryName, dir)
+	}
 	fmt.Printf("  Reiniciá la terminal y ejecutalo con: %s\n\n", binaryName)
 	return true
 }

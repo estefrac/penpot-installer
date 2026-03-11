@@ -11,6 +11,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/estefrac/penpot-installer/internal/docker"
+	"github.com/estefrac/penpot-installer/internal/installer"
 	"github.com/estefrac/penpot-installer/internal/penpot"
 	"github.com/estefrac/penpot-installer/internal/system"
 )
@@ -83,6 +84,9 @@ type Model struct {
 	// Versión
 	version string
 
+	// Resultado de la auto-instalación (para mostrar en el splash)
+	installResult installer.InstallResult
+
 	// Menú
 	menuItems  []menuItem
 	menuCursor int
@@ -120,7 +124,7 @@ type Model struct {
 }
 
 // New crea un nuevo modelo con valores por defecto
-func New(version string) Model {
+func New(version string, installResult installer.InstallResult) Model {
 	sp := spinner.New()
 	sp.Spinner = spinner.Dot
 	sp.Style = lipgloss.NewStyle().Foreground(colorSecondary)
@@ -141,6 +145,7 @@ func New(version string) Model {
 		inputs:         []textinput.Model{dirInput, portInput},
 		dockerChecking: true,
 		version:        version,
+		installResult:  installResult,
 	}
 
 	m.inputs[0].SetValue(m.cfg.InstallDir)
@@ -702,13 +707,21 @@ func (m Model) renderSplash() string {
 			Foreground(colorMuted).
 			Render(fmt.Sprintf("v%s", m.version))
 
+		// Estado de auto-instalación (si hubo alguna acción)
+		installStatus := m.renderInstallStatus()
+
 		// Prompt para continuar
 		prompt := lipgloss.NewStyle().
 			Foreground(colorSecondary).
 			Bold(true).
 			Render("Presioná Enter para continuar")
 
-		msg = lipgloss.JoinVertical(lipgloss.Center, ver, "", prompt)
+		parts := []string{ver}
+		if installStatus != "" {
+			parts = append(parts, "", installStatus)
+		}
+		parts = append(parts, "", prompt)
+		msg = lipgloss.JoinVertical(lipgloss.Center, parts...)
 	} else {
 		msg = lipgloss.NewStyle().
 			Foreground(colorMuted).
@@ -720,6 +733,23 @@ func (m Model) renderSplash() string {
 		lipgloss.Center, lipgloss.Center,
 		lipgloss.JoinVertical(lipgloss.Center, banner, "", msg),
 	)
+}
+
+// renderInstallStatus genera el mensaje de estado de la auto-instalación.
+// Retorna string vacío si no hubo acción (Action == "none").
+func (m Model) renderInstallStatus() string {
+	switch m.installResult.Action {
+	case "installed":
+		return successStyle.Render("Instalado en " + m.installResult.Message)
+	case "updated":
+		return successStyle.Render("Actualizado en " + m.installResult.Message)
+	case "failed":
+		return warningStyle.Render(
+			"No se pudo instalar automaticamente. Ejecuta:\n  " + m.installResult.Message,
+		)
+	default:
+		return ""
+	}
 }
 
 // renderMain muestra el layout principal: banner + menú + panel info

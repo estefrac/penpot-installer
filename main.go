@@ -15,10 +15,10 @@ var version = "dev"
 
 func main() {
 	// Auto-instalarse en el PATH la primera vez que se ejecuta
-	installer.EnsureInstalled()
+	installResult := installer.EnsureInstalled()
 
 	p := tea.NewProgram(
-		tui.New(version),
+		tui.New(version, installResult),
 		tea.WithAltScreen(),       // Usa el buffer alternativo (no ensucia el historial)
 		tea.WithMouseCellMotion(), // Soporte opcional de mouse
 	)

@@ -10,6 +10,13 @@ import (
 	"strings"
 )
 
+// InstallResult comunica el resultado de la auto-instalación al TUI.
+// El installer es silencioso — no imprime nada a stdout/stderr.
+type InstallResult struct {
+	Action  string // "none", "installed", "updated", "failed"
+	Message string // Mensaje legible para mostrar en el TUI
+}
+
 const binaryName = "penpot-manager"
 
 // installDir retorna el directorio destino según el OS:
@@ -71,23 +78,23 @@ func isInstalledLocation() bool {
 // Si no lo está, se copia a la ubicación correcta.
 // Si ya existe pero se está ejecutando desde otra ubicación (ej: /tmp tras un curl),
 // se sobreescribe el binario instalado para actualizarlo.
-// Retorna true si se instaló o actualizó, false si ya estaba al día.
-// En caso de error no fatal (permisos, etc.) simplemente continúa sin instalar.
-func EnsureInstalled() bool {
+// Retorna un InstallResult con el estado de la operación para que el TUI lo muestre.
+// En caso de error no fatal (permisos, etc.) retorna Action="failed" con un mensaje útil.
+func EnsureInstalled() InstallResult {
 	// Si ya estamos corriendo desde la ubicación instalada, no hacer nada
 	if isInstalledLocation() {
-		return false
+		return InstallResult{Action: "none"}
 	}
 
 	target, err := installedPath()
 	if err != nil {
-		return false
+		return InstallResult{Action: "none"}
 	}
 
 	// Obtener la ruta del ejecutable actual
 	execPath, err := os.Executable()
 	if err != nil {
-		return false
+		return InstallResult{Action: "none"}
 	}
 
 	// Determinar si es instalación nueva o actualización
@@ -102,80 +109,91 @@ func EnsureInstalled() bool {
 		return installWindows(execPath, target, isUpdate)
 	}
 
-	return false
+	return InstallResult{Action: "none"}
 }
 
 // installUnix copia el binario a /usr/local/bin usando sudo si es necesario.
 // Si isUpdate es true, sobreescribe el binario existente.
-func installUnix(src, dst string, isUpdate bool) bool {
+func installUnix(src, dst string, isUpdate bool) InstallResult {
+	action := "installed"
 	if isUpdate {
-		fmt.Printf("\n  Actualizando %s en %s...\n", binaryName, filepath.Dir(dst))
-	} else {
-		fmt.Printf("\n  Instalando %s en %s...\n", binaryName, filepath.Dir(dst))
+		action = "updated"
 	}
 
 	// Intentar copiar directo primero (si ya somos root)
 	if os.Geteuid() == 0 {
 		if err := copyFile(src, dst); err == nil {
-			action := "instalado"
-			if isUpdate {
-				action = "actualizado"
+			return InstallResult{
+				Action:  action,
+				Message: fmt.Sprintf("%s en %s", binaryName, filepath.Dir(dst)),
 			}
-			fmt.Printf("  %s %s. Ahora podés ejecutarlo con: %s\n\n", binaryName, action, binaryName)
-			return true
 		}
 	}
 
-	// Usar sudo para copiar
+	// Usar sudo para copiar — EnsureInstalled() se ejecuta ANTES del TUI,
+	// así que stdin/stdout/stderr están disponibles para el prompt de contraseña.
+	if isUpdate {
+		fmt.Printf("\n  Actualizando %s en %s...\n", binaryName, filepath.Dir(dst))
+	} else {
+		fmt.Printf("\n  Instalando %s en %s...\n", binaryName, filepath.Dir(dst))
+	}
 	cmd := exec.Command("sudo", "cp", src, dst)
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
-
 	if err := cmd.Run(); err != nil {
-		// Si falla (usuario cancela sudo, etc.), seguir sin instalar
-		fmt.Printf("  No se pudo instalar en %s (se necesitan permisos de administrador).\n", filepath.Dir(dst))
-		fmt.Printf("  Podés ejecutar manualmente: sudo cp %s %s\n\n", src, dst)
-		return false
+		return InstallResult{
+			Action:  "failed",
+			Message: fmt.Sprintf("sudo cp %s %s", src, dst),
+		}
 	}
 
 	// Asegurar permisos de ejecución
-	_ = exec.Command("sudo", "chmod", "+x", dst).Run()
+	chmodCmd := exec.Command("sudo", "chmod", "+x", dst)
+	chmodCmd.Stdin = os.Stdin
+	chmodCmd.Stdout = os.Stdout
+	chmodCmd.Stderr = os.Stderr
+	_ = chmodCmd.Run()
 
-	action := "instalado"
-	if isUpdate {
-		action = "actualizado"
+	return InstallResult{
+		Action:  action,
+		Message: fmt.Sprintf("%s en %s", binaryName, filepath.Dir(dst)),
 	}
-	fmt.Printf("  %s %s. Ahora podés ejecutarlo con: %s\n\n", binaryName, action, binaryName)
-	return true
 }
 
 // installWindows copia el binario a %LOCALAPPDATA%\penpot-manager y lo agrega al PATH del usuario.
 // Si isUpdate es true, sobreescribe el binario existente.
-func installWindows(src, dst string, isUpdate bool) bool {
+func installWindows(src, dst string, isUpdate bool) InstallResult {
 	dir := filepath.Dir(dst)
+
+	action := "installed"
+	if isUpdate {
+		action = "updated"
+	}
 
 	// Crear directorio destino
 	if err := os.MkdirAll(dir, 0755); err != nil {
-		return false
+		return InstallResult{
+			Action:  "failed",
+			Message: fmt.Sprintf("No se pudo crear %s: %v", dir, err),
+		}
 	}
 
 	// Copiar binario
 	if err := copyFile(src, dst); err != nil {
-		fmt.Printf("  No se pudo instalar en %s: %v\n", dir, err)
-		return false
+		return InstallResult{
+			Action:  "failed",
+			Message: fmt.Sprintf("No se pudo copiar a %s: %v", dir, err),
+		}
 	}
 
 	// Agregar al PATH del usuario si no está
 	addToWindowsPath(dir)
 
-	if isUpdate {
-		fmt.Printf("\n  %s actualizado en %s\n", binaryName, dir)
-	} else {
-		fmt.Printf("\n  %s instalado en %s\n", binaryName, dir)
+	return InstallResult{
+		Action:  action,
+		Message: fmt.Sprintf("%s en %s", binaryName, dir),
 	}
-	fmt.Printf("  Reiniciá la terminal y ejecutalo con: %s\n\n", binaryName)
-	return true
 }
 
 // addToWindowsPath agrega un directorio al PATH del usuario via registro de Windows.

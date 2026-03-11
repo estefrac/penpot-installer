@@ -174,10 +174,11 @@ penpot-installer/
 ├── main.go                        ← Entry point — arranca el TUI
 ├── internal/
 │   ├── tui/                       ← TUI completo (Bubble Tea)
-│   │   ├── model.go               ← Modelo principal: vistas, navegación, operaciones
+│   │   ├── model.go               ← Orquestador principal y ruteo de mensajes
+│   │   ├── view_*.go              ← Sub-modelos especializados por pantalla
 │   │   ├── styles.go              ← Paleta de colores Penpot + estilos Lip Gloss
-│   │   ├── banner.go              ← ASCII art con gradiente
-│   │   └── messages.go            ← Tipos de mensajes para operaciones async
+│   │   ├── banner.go              ← ASCII art del logo
+│   │   └── messages.go            ← Tipos de mensajes para comunicación interna
 │   ├── installer/  selfinstall.go ← Auto-instalación en el PATH (primera ejecución)
 │   ├── updater/                   ← Check de updates y self-update del binario
 │   ├── system/     system.go      ← Detección de OS, ejecutar comandos

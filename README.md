@@ -23,6 +23,8 @@ Sin configuraciones manuales, sin tocar YAML, sin dolor. Descargás el binario, 
 - ✅ **Streaming en tiempo real** — el output de Docker se muestra línea a línea mientras ocurre
 - ✅ **Sin dependencias** — un solo binario, nada más
 
+> **Versión de Penpot instalada:** [2.13.3](https://github.com/penpot/penpot/releases/tag/2.13.3)
+
 ---
 
 ## Requisitos

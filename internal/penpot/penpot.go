@@ -4,18 +4,21 @@ import (
 	"bufio"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/estefrac/penpot-installer/internal/system"
 )
 
 const (
-	// ComposeURL es la URL del docker-compose oficial de Penpot
-	ComposeURL = "https://raw.githubusercontent.com/penpot/penpot/main/docker/images/docker-compose.yaml"
+	// ComposeURL es la URL del docker-compose oficial de Penpot, pinned a un tag estable.
+	// Usar main puede traer cambios sin control; el tag garantiza reproducibilidad.
+	ComposeURL = "https://raw.githubusercontent.com/penpot/penpot/2.13.3/docker/images/docker-compose.yaml"
 	// DefaultPort es el puerto por defecto de Penpot
 	DefaultPort = "9001"
 	// ContainerPrefix es el prefijo de los contenedores de Penpot
@@ -100,7 +103,7 @@ func Install(cfg Config) error {
 	// Descargar docker-compose.yaml
 	fmt.Println("  → Descargando docker-compose.yaml...")
 	composeFile := filepath.Join(cfg.InstallDir, "docker-compose.yaml")
-	if _, err := system.RunCommand("curl", "-fsSL", "-o", composeFile, ComposeURL); err != nil {
+	if err := downloadFile(ComposeURL, composeFile); err != nil {
 		return fmt.Errorf("error descargando docker-compose.yaml: %w", err)
 	}
 
@@ -140,7 +143,7 @@ func Update(cfg Config) error {
 	_ = system.RunCommandInteractive("docker", "compose", "-f", composeFile, "down")
 
 	fmt.Println("  → Actualizando docker-compose.yaml...")
-	if _, err := system.RunCommand("curl", "-fsSL", "-o", composeFile, ComposeURL); err != nil {
+	if err := downloadFile(ComposeURL, composeFile); err != nil {
 		return fmt.Errorf("error actualizando docker-compose.yaml: %w", err)
 	}
 
@@ -184,6 +187,33 @@ func updatePort(composeFile, newPort string) error {
 
 	updated := strings.ReplaceAll(string(content), "9001:", newPort+":")
 	return os.WriteFile(composeFile, []byte(updated), 0644)
+}
+
+// downloadFile descarga una URL y la guarda en destPath.
+// Usa net/http de la stdlib — sin dependencia de curl ni wget.
+func downloadFile(url, destPath string) error {
+	client := &http.Client{Timeout: 5 * time.Minute}
+	resp, err := client.Get(url)
+	if err != nil {
+		return fmt.Errorf("error descargando %s: %w", url, err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("error descargando %s: HTTP %d", url, resp.StatusCode)
+	}
+
+	f, err := os.OpenFile(destPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
+	if err != nil {
+		return fmt.Errorf("error creando archivo %s: %w", destPath, err)
+	}
+	defer f.Close()
+
+	if _, err := io.Copy(f, resp.Body); err != nil {
+		return fmt.Errorf("error escribiendo %s: %w", destPath, err)
+	}
+
+	return nil
 }
 
 // runStreaming ejecuta un comando y llama emit() con cada línea de output.
@@ -233,7 +263,7 @@ func InstallStreaming(cfg Config, emit func(string)) error {
 
 	emit("Descargando docker-compose.yaml...")
 	composeFile := filepath.Join(cfg.InstallDir, "docker-compose.yaml")
-	if _, err := system.RunCommand("curl", "-fsSL", "-o", composeFile, ComposeURL); err != nil {
+	if err := downloadFile(ComposeURL, composeFile); err != nil {
 		return fmt.Errorf("error descargando docker-compose.yaml: %w", err)
 	}
 	emit("docker-compose.yaml descargado")
@@ -272,7 +302,7 @@ func UpdateStreaming(cfg Config, emit func(string)) error {
 	}
 
 	emit("Actualizando docker-compose.yaml...")
-	if _, err := system.RunCommand("curl", "-fsSL", "-o", composeFile, ComposeURL); err != nil {
+	if err := downloadFile(ComposeURL, composeFile); err != nil {
 		return fmt.Errorf("error actualizando docker-compose.yaml: %w", err)
 	}
 	emit("docker-compose.yaml actualizado")

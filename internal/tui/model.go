@@ -13,7 +13,6 @@ import (
 	"github.com/estefrac/penpot-installer/internal/docker"
 	"github.com/estefrac/penpot-installer/internal/penpot"
 	"github.com/estefrac/penpot-installer/internal/system"
-	"github.com/estefrac/penpot-installer/internal/updater"
 )
 
 // pendingOpKind identifica qué operación está pendiente de confirmación
@@ -27,7 +26,21 @@ const (
 	opUninstallKeepData
 	opUninstallWithData
 	opInstall
-	opSelfUpdate
+)
+
+// menuAction identifica la acción de cada ítem del menú
+type menuAction int
+
+const (
+	actionNone menuAction = iota
+	actionInstall
+	actionStart
+	actionStop
+	actionUpdate
+	actionStatus
+	actionOpenBrowser
+	actionUninstall
+	actionQuit
 )
 
 // view representa cada pantalla del TUI
@@ -50,7 +63,7 @@ const (
 // menuItem representa una opción del menú
 type menuItem struct {
 	label    string
-	icon     string
+	action   menuAction
 	disabled bool
 }
 
@@ -67,9 +80,8 @@ type Model struct {
 	dockerOS       string // "linux" | "windows" — para la vista de instalación de Docker
 	splashReady    bool   // Docker verificado, esperando Enter del usuario
 
-	// Versión y update
-	version         string
-	updateAvailable string // vacío si no hay update, o "vX.Y.Z" si hay
+	// Versión
+	version string
 
 	// Menú
 	menuItems  []menuItem
@@ -142,7 +154,6 @@ func (m Model) Init() tea.Cmd {
 	return tea.Batch(
 		m.spinner.Tick,
 		checkDockerCmd(),
-		checkUpdateCmd(m.version),
 	)
 }
 
@@ -162,13 +173,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		var cmd tea.Cmd
 		m.spinner, cmd = m.spinner.Update(msg)
 		return m, cmd
-
-	case msgUpdateAvailable:
-		m.updateAvailable = msg.latestVersion
-		return m, nil
-
-	case msgUpdateCheckDone:
-		return m, nil
 
 	case msgDockerReady:
 		m.dockerReady = true
@@ -196,27 +200,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.ClearScreen
 
 	case msgLogLine:
-		m.logs = append(m.logs, msg.line)
-		return m, nil
-
-	case msgPollLog:
-		if m.logCh == nil {
+		if msg.closed {
+			// Canal cerrado — ya no hay más líneas, esperar resultado final
+			m.logCh = nil
 			return m, nil
 		}
-		select {
-		case line, ok := <-m.logCh:
-			if !ok {
-				// Canal cerrado — esperar resultado final
-				m.logCh = nil
-				return m, nil
-			}
-			m.processDockerLine(line)
-			// Pedir la siguiente línea inmediatamente
-			return m, pollLogCmd()
-		default:
-			// No hay línea todavía — volver a intentar en breve
-			return m, pollLogCmd()
-		}
+		m.processDockerLine(msg.line)
+		// Escuchar la próxima línea (bloquea hasta que haya una)
+		return m, waitForLogCmd(m.logCh)
 
 	case msgDockerInstallDone:
 		// Docker recién instalado — volver a verificar
@@ -353,7 +344,7 @@ func (m Model) handleMenuKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	case tea.KeyEnter:
 		if len(activeItems) > 0 && m.menuCursor < len(activeItems) {
-			return m.executeMenuItem(activeItems[m.menuCursor].label)
+			return m.executeMenuItem(activeItems[m.menuCursor].action)
 		}
 	}
 
@@ -497,60 +488,54 @@ func (m Model) handleStatusKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// executeMenuItem ejecuta la acción según el ítem del menú seleccionado
-func (m Model) executeMenuItem(label string) (tea.Model, tea.Cmd) {
-	switch label {
-	case "🚀 Instalar Penpot":
+// executeMenuItem ejecuta la acción del ítem del menú seleccionado.
+// Usa menuAction (enum) en lugar de strings/emojis para evitar matching frágil.
+func (m Model) executeMenuItem(action menuAction) (tea.Model, tea.Cmd) {
+	switch action {
+	case actionInstall:
 		m.currentView = viewInstall
 		m.inputFocus = 0
 		m.inputs[0].Focus()
 		m.inputs[1].Blur()
 		return m, tea.ClearScreen
 
-	case "▶️  Iniciar Penpot":
+	case actionStart:
 		m.operationMsg = "Iniciando Penpot..."
 		return m.startPenpotCmd()
 
-	case "⏹️  Detener Penpot":
+	case actionStop:
 		m.confirmMsg = "¿Detener Penpot?"
 		m.confirmYes = false
 		m.pendingOp = opStop
 		m.currentView = viewConfirm
 		return m, nil
 
-	case "🔄 Actualizar Penpot":
+	case actionUpdate:
 		m.confirmMsg = "Penpot se detendrá brevemente para actualizar.\n¿Continuar con la actualización?"
 		m.confirmYes = true
 		m.pendingOp = opUpdate
 		m.currentView = viewConfirm
 		return m, nil
 
-	case "📊 Ver estado":
+	case actionStatus:
 		return m, loadStatusCmd(m.cfg)
 
-	case "🌐 Abrir en navegador":
+	case actionOpenBrowser:
 		_ = system.OpenBrowser(fmt.Sprintf("http://localhost:%s", m.cfg.Port))
 		m.resultMsg = fmt.Sprintf("Abriendo http://localhost:%s en el navegador...", m.cfg.Port)
 		m.resultIsError = false
 		m.currentView = viewResult
 		return m, nil
 
-	case "🗑️  Desinstalar Penpot":
+	case actionUninstall:
 		m.confirmMsg = "¿Desinstalar Penpot?\n\nSe eliminarán los contenedores e imágenes Docker.\nEn el siguiente paso podrás elegir qué hacer con tus datos."
 		m.confirmYes = false
 		m.pendingOp = opUninstall
 		m.currentView = viewConfirm
 		return m, nil
 
-	case "❌ Salir":
+	case actionQuit:
 		return m, tea.Quit
-	}
-
-	// Captura dinámica: "⬆️  Actualizar penpot-manager (vX.Y.Z)"
-	if strings.HasPrefix(label, "⬆️") {
-		m.operationMsg = fmt.Sprintf("Actualizando penpot-manager a %s...", m.updateAvailable)
-		m.pendingOp = opSelfUpdate
-		return m.executePendingOp()
 	}
 
 	return m, nil
@@ -594,8 +579,6 @@ func (m Model) executePendingOp() (tea.Model, tea.Cmd) {
 	case opUninstallWithData:
 		m.operationMsg = "Desinstalando Penpot (incluyendo datos)..."
 		return m.uninstallPenpotCmd()
-	case opSelfUpdate:
-		return m.selfUpdateCmd()
 	}
 	m.currentView = viewMenu
 	return m, tea.ClearScreen
@@ -607,35 +590,29 @@ func (m *Model) buildMenuItems() {
 
 	if !m.isInstalled {
 		items = append(items,
-			menuItem{label: "🚀 Instalar Penpot"},
+			menuItem{label: "🚀 Instalar Penpot", action: actionInstall},
 		)
 	} else {
 		if m.isRunning {
 			items = append(items,
-				menuItem{label: "⏹️  Detener Penpot"},
-				menuItem{label: "🌐 Abrir en navegador"},
-				menuItem{label: "📊 Ver estado"},
-				menuItem{label: "🔄 Actualizar Penpot"},
+				menuItem{label: "⏹️  Detener Penpot", action: actionStop},
+				menuItem{label: "🌐 Abrir en navegador", action: actionOpenBrowser},
+				menuItem{label: "📊 Ver estado", action: actionStatus},
+				menuItem{label: "🔄 Actualizar Penpot", action: actionUpdate},
 			)
 		} else {
 			items = append(items,
-				menuItem{label: "▶️  Iniciar Penpot"},
-				menuItem{label: "📊 Ver estado"},
-				menuItem{label: "🔄 Actualizar Penpot"},
+				menuItem{label: "▶️  Iniciar Penpot", action: actionStart},
+				menuItem{label: "📊 Ver estado", action: actionStatus},
+				menuItem{label: "🔄 Actualizar Penpot", action: actionUpdate},
 			)
 		}
 		items = append(items,
-			menuItem{label: "🗑️  Desinstalar Penpot"},
+			menuItem{label: "🗑️  Desinstalar Penpot", action: actionUninstall},
 		)
 	}
 
-	if m.updateAvailable != "" {
-		items = append(items,
-			menuItem{label: fmt.Sprintf("⬆️  Actualizar penpot-manager (%s)", m.updateAvailable)},
-		)
-	}
-
-	items = append(items, menuItem{label: "❌ Salir"})
+	items = append(items, menuItem{label: "❌ Salir", action: actionQuit})
 
 	m.menuItems = items
 	if m.menuCursor >= len(items) {
@@ -771,18 +748,6 @@ func (m Model) renderMain() string {
 
 	help := helpStyle.Render("↑↓ navegar  ·  enter seleccionar  ·  q salir")
 
-	// Banner de update disponible
-	var updateBanner string
-	if m.updateAvailable != "" {
-		updateBanner = lipgloss.NewStyle().
-			Foreground(colorBg).
-			Background(colorWarning).
-			Bold(true).
-			Padding(0, 2).
-			Render(fmt.Sprintf("  Nueva versión disponible: %s  →  descargá el binario actualizado", m.updateAvailable))
-		updateBanner = lipgloss.NewStyle().Width(w).Align(lipgloss.Center).Render(updateBanner)
-	}
-
 	// Versión actual (pie de página)
 	versionLine := ""
 	if m.version != "" && m.version != "dev" {
@@ -791,9 +756,6 @@ func (m Model) renderMain() string {
 	}
 
 	content := []string{banner, "", panels, ""}
-	if updateBanner != "" {
-		content = append(content, updateBanner, "")
-	}
 	content = append(content,
 		lipgloss.NewStyle().Width(w).Align(lipgloss.Center).Render(help),
 		versionLine,
@@ -1334,17 +1296,6 @@ func (m Model) renderUninstallData() string {
 	return lipgloss.Place(w, h, lipgloss.Center, lipgloss.Center, box)
 }
 
-// checkUpdateCmd consulta GitHub en background para ver si hay una versión nueva
-func checkUpdateCmd(currentVersion string) tea.Cmd {
-	return func() tea.Msg {
-		result := updater.Check(currentVersion)
-		if result.HasUpdate {
-			return msgUpdateAvailable{latestVersion: result.LatestVersion}
-		}
-		return msgUpdateCheckDone{}
-	}
-}
-
 // checkDockerCmd verifica si Docker está disponible
 func checkDockerCmd() tea.Cmd {
 	return func() tea.Msg {
@@ -1369,25 +1320,6 @@ func installDockerCmd() tea.Cmd {
 		}
 		return msgDockerInstallDone{}
 	}
-}
-
-// selfUpdateCmd descarga el binario nuevo y reemplaza el ejecutable actual
-func (m Model) selfUpdateCmd() (Model, tea.Cmd) {
-	m.logs = nil
-	m.servicesPulling = make(map[string]bool)
-	m.servicesPulled = nil
-	m.servicesStarted = nil
-	m.operationDone = false
-	m.currentView = viewOperation
-
-	cmd := func() tea.Msg {
-		if err := updater.SelfUpdate(m.updateAvailable, func(line string) {}); err != nil {
-			return msgOperationError{err}
-		}
-		return msgOperationDone{"¡penpot-manager actualizado correctamente!\n\nReiniciá el programa para usar la nueva versión."}
-	}
-
-	return m, tea.Batch(m.spinner.Tick, cmd, pollLogCmd())
 }
 
 // startDockerCmd inicia el daemon de Docker
@@ -1473,7 +1405,7 @@ func (m Model) launchStreaming(op func(emit func(string)) error, doneMsg string)
 	m.servicesStarted = nil
 	m.operationDone = false
 	m.currentView = viewOperation
-	return m, tea.Batch(m.spinner.Tick, resultCmd, pollLogCmd())
+	return m, tea.Batch(m.spinner.Tick, resultCmd, waitForLogCmd(ch))
 }
 
 // installPenpotCmd ejecuta la instalación de Penpot con streaming
@@ -1524,9 +1456,17 @@ func (m Model) uninstallKeepDataCmd() (Model, tea.Cmd) {
 	)
 }
 
-// pollLogCmd retorna un Cmd que emite msgPollLog para seguir leyendo el canal
-func pollLogCmd() tea.Cmd {
-	return func() tea.Msg { return msgPollLog{} }
+// waitForLogCmd bloquea hasta recibir la próxima línea del canal de streaming.
+// Cuando el canal se cierra, emite msgLogLine{closed: true} para señalizarlo.
+// Este diseño evita el busy loop: la goroutine duerme hasta que hay datos.
+func waitForLogCmd(ch <-chan string) tea.Cmd {
+	return func() tea.Msg {
+		line, ok := <-ch
+		if !ok {
+			return msgLogLine{closed: true}
+		}
+		return msgLogLine{line: line}
+	}
 }
 
 // startStreamingCmd arranca la operación en background y retorna dos Cmds:

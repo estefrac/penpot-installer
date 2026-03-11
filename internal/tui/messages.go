@@ -35,20 +35,15 @@ type msgDockerNotInstalled struct{ os string }
 // msgDockerNotRunning se envía cuando Docker está instalado pero no corriendo
 type msgDockerNotRunning struct{}
 
-// msgLogLine se envía con cada línea de output de un comando en streaming
-type msgLogLine struct{ line string }
-
-// msgPollLog se envía para pedir la siguiente línea del canal de streaming
-type msgPollLog struct{}
+// msgLogLine se envía con cada línea de output de un comando en streaming.
+// closed=true indica que el canal se cerró (no hay más líneas).
+type msgLogLine struct {
+	line   string
+	closed bool
+}
 
 // msgDockerInstallDone se envía cuando la instalación de Docker completó
 type msgDockerInstallDone struct{}
 
 // msgDockerInstallError se envía cuando la instalación de Docker falló
 type msgDockerInstallError struct{ err error }
-
-// msgUpdateAvailable se envía cuando hay una versión nueva disponible
-type msgUpdateAvailable struct{ latestVersion string }
-
-// msgUpdateCheckDone se envía cuando el chequeo terminó sin update
-type msgUpdateCheckDone struct{}

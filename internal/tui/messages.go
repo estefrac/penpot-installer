@@ -47,3 +47,6 @@ type msgDockerInstallDone struct{}
 
 // msgDockerInstallError se envía cuando la instalación de Docker falló
 type msgDockerInstallError struct{ err error }
+
+// msgChangeView solicita al modelo principal cambiar la vista activa
+type msgChangeView struct{ newView view }

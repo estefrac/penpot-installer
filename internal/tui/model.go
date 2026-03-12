@@ -46,17 +46,18 @@ const (
 type view int
 
 const (
-	viewSplash           view = iota // Pantalla inicial cargando
-	viewMenu                         // Menú principal
-	viewInstall                      // Formulario de instalación
-	viewStatus                       // Estado de contenedores
-	viewConfirm                      // Confirmación de acción destructiva
-	viewOperation                    // Operación en progreso (spinner)
-	viewResult                       // Resultado de operación
-	viewDockerInstall                // Confirmar instalación de Docker (Linux)
-	viewDockerWindows                // Instrucciones Docker en Windows
-	viewDockerNotRunning             // Docker instalado pero no corriendo
-	viewUninstallData                // Segunda confirmación: ¿borrar datos?
+	viewSplash                  view = iota // Pantalla inicial cargando
+	viewMenu                                // Menú principal
+	viewInstall                             // Formulario de instalación
+	viewStatus                              // Estado de contenedores
+	viewConfirm                             // Confirmación de acción destructiva
+	viewOperation                           // Operación en progreso (spinner)
+	viewResult                              // Resultado de operación
+	viewDockerInstall                       // Confirmar instalación de Docker (Linux)
+	viewDockerWindows                       // Instrucciones Docker en Windows (no instalado)
+	viewDockerNotRunning                    // Docker instalado pero no corriendo (Linux)
+	viewDockerNotRunningWindows             // Docker instalado pero no corriendo (Windows)
+	viewUninstallData                       // Segunda confirmación: ¿borrar datos?
 )
 
 // Common contiene el estado compartido por todas las vistas/sub-modelos
@@ -183,11 +184,22 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case msgDockerStartAction:
 		if msg.start {
+			if msg.os == "windows" {
+				m.operation = NewOperationModel(m.spinner, "Iniciando Docker Desktop...")
+				m.currentView = viewOperation
+				return m, tea.Batch(m.spinner.Tick, startDockerWindowsCmd())
+			}
 			m.operation = NewOperationModel(m.spinner, "Iniciando Docker...")
 			m.currentView = viewOperation
-			return m, tea.Batch(m.spinner.Tick, startDockerCmd())
+			return m, tea.Batch(m.spinner.Tick, startDockerLinuxCmd())
 		}
 		return m, tea.Quit
+
+	case msgDockerWindowsStarting:
+		// Docker Desktop fue lanzado, ahora esperamos que el daemon esté listo
+		m.operation = NewOperationModel(m.spinner, "Esperando que Docker Desktop arranque...")
+		m.currentView = viewOperation
+		return m, tea.Batch(m.spinner.Tick, waitForDockerWindowsCmd())
 
 	case msgDockerReady:
 		m.dockerReady = true
@@ -210,8 +222,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case msgDockerNotRunning:
 		m.dockerChecking = false
-		m.docker = DockerModel{view: viewDockerNotRunning}
-		m.currentView = viewDockerNotRunning
+		if msg.os == "windows" {
+			m.docker = DockerModel{view: viewDockerNotRunningWindows}
+			m.currentView = viewDockerNotRunningWindows
+		} else {
+			m.docker = DockerModel{view: viewDockerNotRunning}
+			m.currentView = viewDockerNotRunning
+		}
 		return m, tea.ClearScreen
 
 	case msgLogLine:
@@ -279,7 +296,7 @@ func (m Model) delegateUpdate(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.operation, cmd = m.operation.Update(msg)
 	case viewResult:
 		m.result, cmd = m.result.Update(msg)
-	case viewDockerInstall, viewDockerWindows, viewDockerNotRunning:
+	case viewDockerInstall, viewDockerWindows, viewDockerNotRunning, viewDockerNotRunningWindows:
 		m.docker, cmd = m.docker.Update(msg)
 	}
 	return m, cmd
@@ -306,7 +323,7 @@ func (m Model) View() string {
 		content = m.operation.View(m.common)
 	case viewResult:
 		content = m.result.View(m.common)
-	case viewDockerInstall, viewDockerWindows, viewDockerNotRunning:
+	case viewDockerInstall, viewDockerWindows, viewDockerNotRunning, viewDockerNotRunningWindows:
 		content = m.docker.View(m.common)
 	}
 
@@ -399,7 +416,7 @@ func checkDockerCmd() tea.Cmd {
 			return msgDockerNotInstalled{os: runtime.GOOS}
 		}
 		if !docker.IsRunning() {
-			return msgDockerNotRunning{}
+			return msgDockerNotRunning{os: runtime.GOOS}
 		}
 		if !docker.ComposeInstalled() {
 			return msgDockerError{fmt.Errorf("docker compose no está disponible")}
@@ -417,12 +434,34 @@ func installDockerCmd() tea.Cmd {
 	}
 }
 
-func startDockerCmd() tea.Cmd {
+func startDockerLinuxCmd() tea.Cmd {
 	return func() tea.Msg {
 		if _, err := system.RunCommand("sudo", "systemctl", "start", "docker"); err != nil {
 			return msgDockerInstallError{err}
 		}
 		return msgDockerInstallDone{}
+	}
+}
+
+func startDockerWindowsCmd() tea.Cmd {
+	return func() tea.Msg {
+		if err := docker.StartDesktop(); err != nil {
+			return msgDockerError{err}
+		}
+		return msgDockerWindowsStarting{}
+	}
+}
+
+func waitForDockerWindowsCmd() tea.Cmd {
+	return func() tea.Msg {
+		// Polling: esperar hasta 60 segundos a que Docker Desktop arranque
+		for i := 0; i < 60; i++ {
+			system.Sleep(1)
+			if docker.IsRunning() {
+				return msgDockerInstallDone{}
+			}
+		}
+		return msgDockerError{fmt.Errorf("Docker Desktop tardó demasiado en arrancar.\nAbrilo manualmente y volvé a ejecutar el instalador.")}
 	}
 }
 

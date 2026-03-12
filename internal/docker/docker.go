@@ -2,7 +2,9 @@ package docker
 
 import (
 	"fmt"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"strings"
 
@@ -98,4 +100,21 @@ func getCurrentUser() string {
 func ComposeInstalled() bool {
 	_, err := system.RunCommand("docker", "compose", "version")
 	return err == nil
+}
+
+// StartDesktop intenta iniciar Docker Desktop en Windows buscando el ejecutable
+// en las rutas típicas de instalación. Retorna error si no lo encuentra o no puede lanzarlo.
+func StartDesktop() error {
+	candidates := []string{
+		filepath.Join(os.Getenv("ProgramFiles"), "Docker", "Docker", "Docker Desktop.exe"),
+		filepath.Join(os.Getenv("LOCALAPPDATA"), "Docker", "Docker Desktop.exe"),
+	}
+
+	for _, path := range candidates {
+		if _, err := os.Stat(path); err == nil {
+			return exec.Command(path).Start()
+		}
+	}
+
+	return fmt.Errorf("no se encontró Docker Desktop")
 }

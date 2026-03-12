@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"runtime"
 	"strings"
+	"time"
 )
 
 // OS representa el sistema operativo detectado
@@ -130,4 +131,9 @@ func OpenBrowser(url string) error {
 	}
 
 	return exec.Command(cmd, args...).Start()
+}
+
+// Sleep pausa la ejecución durante n segundos.
+func Sleep(seconds int) {
+	time.Sleep(time.Duration(seconds) * time.Second)
 }

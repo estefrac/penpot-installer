@@ -33,7 +33,10 @@ type containerInfo struct {
 type msgDockerNotInstalled struct{ os string }
 
 // msgDockerNotRunning se envía cuando Docker está instalado pero no corriendo
-type msgDockerNotRunning struct{}
+type msgDockerNotRunning struct{ os string }
+
+// msgDockerWindowsStarting se envía cuando Docker Desktop fue lanzado y se está esperando que arranque
+type msgDockerWindowsStarting struct{}
 
 // msgLogLine se envía con cada línea de output de un comando en streaming.
 // closed=true indica que el canal se cerró (no hay más líneas).

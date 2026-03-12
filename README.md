@@ -64,18 +64,21 @@ penpot-manager
 ### Windows
 
 1. Descargá el archivo `penpot-manager-windows-amd64.exe` desde la [página de Releases](https://github.com/estefrac/penpot-installer/releases/latest)
-2. Abrí una terminal (CMD o PowerShell) **como administrador**
-3. Navegá a la carpeta donde descargaste el archivo
-4. Ejecutá:
+2. Abrí **PowerShell** o **CMD** (no hace falta ejecutarlo como administrador)
+3. Navegá a la carpeta donde descargaste el archivo y ejecutá:
    ```cmd
-   penpot-manager-windows-amd64.exe
+   .\penpot-manager-windows-amd64.exe
    ```
+
+> ⚠️ **No hagas doble-click** en el `.exe` desde el Explorador de archivos — la ventana se va a cerrar sola al terminar y no vas a poder leer nada.
 
 La primera vez se instala en `%LOCALAPPDATA%\penpot-manager` y se agrega al PATH. Después de reiniciar la terminal, lo ejecutás directamente:
 
 ```cmd
 penpot-manager
 ```
+
+> Si Docker Desktop no está instalado o no está abierto, el instalador te va a guiar paso a paso.
 
 ---
 

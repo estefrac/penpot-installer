@@ -4,6 +4,8 @@
 
 Sin configuraciones manuales, sin tocar YAML, sin dolor. Descargás el binario, lo ejecutás, y en minutos tenés Penpot corriendo localmente.
 
+![Penpot Manager TUI](ui.png)
+
 ---
 
 ## ¿Qué es Penpot?

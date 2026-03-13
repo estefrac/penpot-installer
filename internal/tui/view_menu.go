@@ -63,18 +63,28 @@ func (m MenuModel) View(common Common, items []MenuItem) string {
 	// Panel derecho: info de estado
 	infoPanel := m.renderInfoPanel(common)
 
-	// Layout horizontal de paneles
-	panelWidth := w - 8
-	menuW := 36
-	infoW := panelWidth - menuW - 4
-	if infoW < 20 {
-		infoW = 20
+	// Ancho fijo para los paneles, centrado en el terminal
+	menuW := 30
+	infoW := 36
+	if menuW+infoW+14 > w {
+		infoW = w - menuW - 14
+		if infoW < 20 {
+			infoW = 20
+		}
 	}
 
 	menuStyled := menuPanelStyle.Width(menuW).Render(menuPanel)
 	infoStyled := contentPanelStyle.Width(infoW).Render(infoPanel)
 
 	panels := lipgloss.JoinHorizontal(lipgloss.Top, menuStyled, "  ", infoStyled)
+
+	// Centrar los paneles horizontalmente
+	panelsWidth := lipgloss.Width(panels)
+	leftPad := (w - panelsWidth) / 2
+	if leftPad < 0 {
+		leftPad = 0
+	}
+	centeredPanels := lipgloss.NewStyle().PaddingLeft(leftPad).Render(panels)
 
 	help := helpStyle.Render("↑↓ navegar  ·  enter seleccionar  ·  q salir")
 
@@ -85,7 +95,7 @@ func (m MenuModel) View(common Common, items []MenuItem) string {
 		versionLine = lipgloss.NewStyle().Width(w).Align(lipgloss.Right).Render(versionLine)
 	}
 
-	content := []string{banner, "", panels, ""}
+	content := []string{banner, "", centeredPanels, ""}
 	content = append(content,
 		lipgloss.NewStyle().Width(w).Align(lipgloss.Center).Render(help),
 		versionLine,

@@ -370,25 +370,25 @@ func (m Model) handleMenuAction(action menuAction) (tea.Model, tea.Cmd) {
 func (m Model) buildMenuItems() []MenuItem {
 	items := []MenuItem{}
 	if !m.common.isInstalled {
-		items = append(items, MenuItem{Label: "🚀 Instalar Penpot", Action: actionInstall})
+		items = append(items, MenuItem{Label: "↓  Instalar Penpot", Action: actionInstall})
 	} else {
 		if m.common.isRunning {
 			items = append(items,
-				MenuItem{Label: "⏹️  Detener Penpot", Action: actionStop},
-				MenuItem{Label: "🌐 Abrir en navegador", Action: actionOpenBrowser},
-				MenuItem{Label: "📊 Ver estado", Action: actionStatus},
-				MenuItem{Label: "🔄 Actualizar Penpot", Action: actionUpdate},
+				MenuItem{Label: "■  Detener Penpot", Action: actionStop},
+				MenuItem{Label: "→  Abrir en navegador", Action: actionOpenBrowser},
+				MenuItem{Label: "≡  Ver estado", Action: actionStatus},
+				MenuItem{Label: "↻  Actualizar Penpot", Action: actionUpdate},
 			)
 		} else {
 			items = append(items,
-				MenuItem{Label: "▶️  Iniciar Penpot", Action: actionStart},
-				MenuItem{Label: "📊 Ver estado", Action: actionStatus},
-				MenuItem{Label: "🔄 Actualizar Penpot", Action: actionUpdate},
+				MenuItem{Label: "▶  Iniciar Penpot", Action: actionStart},
+				MenuItem{Label: "≡  Ver estado", Action: actionStatus},
+				MenuItem{Label: "↻  Actualizar Penpot", Action: actionUpdate},
 			)
 		}
-		items = append(items, MenuItem{Label: "🗑️  Desinstalar Penpot", Action: actionUninstall})
+		items = append(items, MenuItem{Label: "✕  Desinstalar Penpot", Action: actionUninstall})
 	}
-	items = append(items, MenuItem{Label: "❌ Salir", Action: actionQuit})
+	items = append(items, MenuItem{Label: "×  Salir", Action: actionQuit})
 	return items
 }
 
@@ -476,28 +476,28 @@ func (m Model) launchStreaming(op func(emit func(string)) error, doneMsg string)
 func (m Model) installPenpotCmd() (Model, tea.Cmd) {
 	return m.launchStreaming(
 		func(emit func(string)) error { return penpot.InstallStreaming(m.common.cfg, emit) },
-		"¡Penpot instalado correctamente! 🎨",
+		"Penpot instalado correctamente.",
 	)
 }
 
 func (m Model) startPenpotCmd() (Model, tea.Cmd) {
 	return m.launchStreaming(
 		func(emit func(string)) error { return penpot.StartStreaming(m.common.cfg, emit) },
-		"Penpot iniciado ▶️",
+		"Penpot iniciado.",
 	)
 }
 
 func (m Model) stopPenpotCmd() (Model, tea.Cmd) {
 	return m.launchStreaming(
 		func(emit func(string)) error { return penpot.StopStreaming(m.common.cfg, emit) },
-		"Penpot detenido ⏹️",
+		"Penpot detenido.",
 	)
 }
 
 func (m Model) updatePenpotCmd() (Model, tea.Cmd) {
 	return m.launchStreaming(
 		func(emit func(string)) error { return penpot.UpdateStreaming(m.common.cfg, emit) },
-		"¡Penpot actualizado correctamente! 🎉",
+		"Penpot actualizado correctamente.",
 	)
 }
 

@@ -26,6 +26,10 @@ func (m DockerModel) Update(msg tea.Msg) (DockerModel, tea.Cmd) {
 			return m.handleDockerNotRunningKey(msg)
 		case viewDockerNotRunningWindows:
 			return m.handleDockerNotRunningWindowsKey(msg)
+		case viewDockerComposeInstall:
+			return m.handleDockerComposeInstallKey(msg)
+		case viewDockerComposeWindows:
+			return m.handleDockerComposeWindowsKey(msg)
 		}
 	}
 	return m, nil
@@ -72,6 +76,24 @@ func (m DockerModel) handleDockerNotRunningWindowsKey(msg tea.KeyMsg) (DockerMod
 	return m, nil
 }
 
+func (m DockerModel) handleDockerComposeInstallKey(msg tea.KeyMsg) (DockerModel, tea.Cmd) {
+	switch msg.String() {
+	case "s", "S", "y", "Y":
+		return m, func() tea.Msg { return msgDockerComposeInstallAction{install: true} }
+	case "n", "N", tea.KeyEsc.String():
+		return m, tea.Quit
+	}
+	return m, nil
+}
+
+func (m DockerModel) handleDockerComposeWindowsKey(msg tea.KeyMsg) (DockerModel, tea.Cmd) {
+	switch msg.Type {
+	case tea.KeyEsc:
+		return m, tea.Quit
+	}
+	return m, nil
+}
+
 func (m DockerModel) View(common Common) string {
 	switch m.view {
 	case viewDockerInstall:
@@ -82,6 +104,10 @@ func (m DockerModel) View(common Common) string {
 		return m.renderDockerNotRunning(common)
 	case viewDockerNotRunningWindows:
 		return m.renderDockerNotRunningWindows(common)
+	case viewDockerComposeInstall:
+		return m.renderDockerComposeInstall(common)
+	case viewDockerComposeWindows:
+		return m.renderDockerComposeWindows(common)
 	}
 	return ""
 }
@@ -188,4 +214,66 @@ type msgDockerInstallAction struct{ install bool }
 type msgDockerStartAction struct {
 	start bool
 	os    string
+}
+
+// msgDockerComposeInstallAction se emite cuando el usuario confirma o rechaza
+// la instalación del plugin docker-compose.
+type msgDockerComposeInstallAction struct{ install bool }
+
+func (m DockerModel) renderDockerComposeInstall(common Common) string {
+	boxW := 66
+	description := "Docker está instalado y corriendo, pero el plugin\n" +
+		"docker compose (V2) no está disponible.\n\n" +
+		"Se instalará usando apt:\n" +
+		"  sudo apt-get install -y docker-compose-plugin\n\n" +
+		"Si tu sistema usa otro package manager, instalá el\n" +
+		"plugin manualmente:\n" +
+		"  https://docs.docker.com/compose/install/linux/"
+
+	inner := lipgloss.JoinVertical(lipgloss.Left,
+		warningStyle.Bold(true).Render("⚠  Docker Compose no está disponible"),
+		"",
+		lipgloss.NewStyle().Foreground(colorText).Width(boxW-4).Render(description),
+		"",
+		lipgloss.NewStyle().Foreground(colorMuted).Render(strings.Repeat("─", boxW-6)),
+		"",
+		highlightStyle.Render("¿Instalar docker-compose-plugin ahora?"),
+		"",
+		lipgloss.NewStyle().Foreground(colorMuted).Render("s / y  instalar   ·   n / esc  salir"),
+	)
+	box := lipgloss.NewStyle().
+		Width(boxW).Padding(1, 2).
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(colorWarning).
+		Render(inner)
+	return lipgloss.Place(innerWidth(common.width), innerHeight(common.height), lipgloss.Center, lipgloss.Center, box)
+}
+
+func (m DockerModel) renderDockerComposeWindows(common Common) string {
+	boxW := 66
+	description := "Docker Desktop está instalado y corriendo, pero el\n" +
+		"plugin docker compose (V2) no está disponible.\n\n" +
+		"Esto es inusual — Docker Desktop siempre incluye\n" +
+		"Compose V2 por defecto.\n\n" +
+		"Pasos sugeridos:\n" +
+		"  1. Abrí Docker Desktop → Settings → General\n" +
+		"  2. Verificá que 'Use Docker Compose V2' esté activado\n" +
+		"  3. Si no funciona, reinstalá Docker Desktop\n\n" +
+		"Instalador oficial: https://www.docker.com/products/docker-desktop/"
+
+	inner := lipgloss.JoinVertical(lipgloss.Left,
+		warningStyle.Bold(true).Render("⚠  Docker Compose no está disponible"),
+		"",
+		lipgloss.NewStyle().Foreground(colorText).Width(boxW-4).Render(description),
+		"",
+		lipgloss.NewStyle().Foreground(colorMuted).Render(strings.Repeat("─", boxW-6)),
+		"",
+		lipgloss.NewStyle().Foreground(colorMuted).Render("esc  salir"),
+	)
+	box := lipgloss.NewStyle().
+		Width(boxW).Padding(1, 2).
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(colorWarning).
+		Render(inner)
+	return lipgloss.Place(innerWidth(common.width), innerHeight(common.height), lipgloss.Center, lipgloss.Center, box)
 }

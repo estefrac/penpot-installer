@@ -57,6 +57,8 @@ const (
 	viewDockerWindows                       // Instrucciones Docker en Windows (no instalado)
 	viewDockerNotRunning                    // Docker instalado pero no corriendo (Linux)
 	viewDockerNotRunningWindows             // Docker instalado pero no corriendo (Windows)
+	viewDockerComposeInstall                // docker compose no disponible (Linux)
+	viewDockerComposeWindows                // docker compose no disponible (Windows) — caso edge
 	viewUninstallData                       // Segunda confirmación: ¿borrar datos?
 )
 
@@ -231,6 +233,25 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, tea.ClearScreen
 
+	case msgDockerComposeNotInstalled:
+		m.dockerChecking = false
+		m.dockerOS = msg.os
+		if msg.os == "linux" {
+			m.docker = DockerModel{os: msg.os, view: viewDockerComposeInstall}
+		} else {
+			m.docker = DockerModel{os: msg.os, view: viewDockerComposeWindows}
+		}
+		m.currentView = m.docker.view
+		return m, tea.ClearScreen
+
+	case msgDockerComposeInstallAction:
+		if msg.install {
+			m.operation = NewOperationModel(m.spinner, "Instalando Docker Compose plugin...")
+			m.currentView = viewOperation
+			return m, tea.Batch(m.spinner.Tick, installDockerComposeCmd())
+		}
+		return m, tea.Quit
+
 	case msgLogLine:
 		if msg.closed {
 			m.logCh = nil
@@ -296,7 +317,8 @@ func (m Model) delegateUpdate(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.operation, cmd = m.operation.Update(msg)
 	case viewResult:
 		m.result, cmd = m.result.Update(msg)
-	case viewDockerInstall, viewDockerWindows, viewDockerNotRunning, viewDockerNotRunningWindows:
+	case viewDockerInstall, viewDockerWindows, viewDockerNotRunning,
+		viewDockerNotRunningWindows, viewDockerComposeInstall, viewDockerComposeWindows:
 		m.docker, cmd = m.docker.Update(msg)
 	}
 	return m, cmd
@@ -323,7 +345,8 @@ func (m Model) View() string {
 		content = m.operation.View(m.common)
 	case viewResult:
 		content = m.result.View(m.common)
-	case viewDockerInstall, viewDockerWindows, viewDockerNotRunning, viewDockerNotRunningWindows:
+	case viewDockerInstall, viewDockerWindows, viewDockerNotRunning,
+		viewDockerNotRunningWindows, viewDockerComposeInstall, viewDockerComposeWindows:
 		content = m.docker.View(m.common)
 	}
 
@@ -419,7 +442,7 @@ func checkDockerCmd() tea.Cmd {
 			return msgDockerNotRunning{os: runtime.GOOS}
 		}
 		if !docker.ComposeInstalled() {
-			return msgDockerError{fmt.Errorf("docker compose no está disponible")}
+			return msgDockerComposeNotInstalled{os: runtime.GOOS}
 		}
 		return msgDockerReady{}
 	}
@@ -428,6 +451,15 @@ func checkDockerCmd() tea.Cmd {
 func installDockerCmd() tea.Cmd {
 	return func() tea.Msg {
 		if err := docker.Install(); err != nil {
+			return msgDockerInstallError{err}
+		}
+		return msgDockerInstallDone{}
+	}
+}
+
+func installDockerComposeCmd() tea.Cmd {
+	return func() tea.Msg {
+		if err := docker.InstallCompose(); err != nil {
 			return msgDockerInstallError{err}
 		}
 		return msgDockerInstallDone{}

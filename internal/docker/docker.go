@@ -11,6 +11,10 @@ import (
 	"github.com/estefrac/penpot-installer/internal/system"
 )
 
+// runCommand es la función de ejecución de comandos.
+// Se puede overridear en tests para evitar dependencia del entorno.
+var runCommand = system.RunCommand
+
 // IsInstalled verifica si Docker está instalado
 func IsInstalled() bool {
 	return system.CommandExists("docker")
@@ -96,10 +100,43 @@ func getCurrentUser() string {
 	return strings.TrimSpace(string(out))
 }
 
-// ComposeInstalled verifica si docker compose está disponible
+// ComposeInstalled verifica si docker compose (V2) está disponible.
+// No detecta docker-compose V1 (standalone) — está EOL desde julio 2023.
 func ComposeInstalled() bool {
-	_, err := system.RunCommand("docker", "compose", "version")
+	_, err := runCommand("docker", "compose", "version")
 	return err == nil
+}
+
+// InstallCompose instala el plugin docker-compose-plugin via apt-get.
+// Solo soportado en Linux (Debian/Ubuntu). Otros package managers deben
+// instalar manualmente: https://docs.docker.com/compose/install/linux/
+func InstallCompose() error {
+	if runtime.GOOS != "linux" {
+		return fmt.Errorf("instalación automática de Docker Compose solo soportada en Linux")
+	}
+
+	steps := []struct {
+		name string
+		cmd  string
+		args []string
+	}{
+		{
+			"Actualizando índice de paquetes",
+			"apt-get", []string{"update", "-y"},
+		},
+		{
+			"Instalando docker-compose-plugin",
+			"apt-get", []string{"install", "-y", "docker-compose-plugin"},
+		},
+	}
+
+	for _, step := range steps {
+		if err := system.RunCommandInteractive(step.cmd, step.args...); err != nil {
+			return fmt.Errorf("error en '%s': %w", step.name, err)
+		}
+	}
+
+	return nil
 }
 
 // StartDesktop intenta iniciar Docker Desktop en Windows buscando el ejecutable

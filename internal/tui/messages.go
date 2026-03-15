@@ -53,3 +53,7 @@ type msgDockerInstallError struct{ err error }
 
 // msgChangeView solicita al modelo principal cambiar la vista activa
 type msgChangeView struct{ newView view }
+
+// msgDockerComposeNotInstalled se envía cuando docker compose (V2) no está disponible
+// pero Docker sí está instalado y corriendo.
+type msgDockerComposeNotInstalled struct{ os string }
